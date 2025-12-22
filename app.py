@@ -2,7 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 from docx import Document
 from streamlit_mermaid import st_mermaid
-from audio_recorder_streamlit import audio_recorder # <--- ĐÃ SỬA
+from audio_recorder_streamlit import audio_recorder
 import tempfile
 import os
 import time
@@ -26,6 +26,18 @@ def configure_genai():
         st.error("🚨 Chưa nhập API Key trong Secrets!")
         return False
 
+def get_valid_models():
+    """Hàm quét danh sách model thực tế từ Google"""
+    try:
+        models = genai.list_models()
+        valid_list = []
+        for m in models:
+            if 'generateContent' in m.supported_generation_methods:
+                valid_list.append(m.name)
+        return valid_list
+    except:
+        return []
+
 def upload_to_gemini(path, mime_type="audio/mp3"):
     file = genai.upload_file(path, mime_type=mime_type)
     while file.state.name == "PROCESSING":
@@ -45,12 +57,24 @@ def create_docx(content):
 
 # --- MAIN APP ---
 def main():
-    st.title("💎 NotebookLM Ultimate (9 Weapons + Chat + Live)")
+    st.title("💎 NotebookLM Ultimate (Smart Mode)")
     if not configure_genai(): return
 
     with st.sidebar:
         st.header("🧠 Model Engine")
-        model_version = st.selectbox("Chọn Model:", ("gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro"))
+        
+        # 1. CHỌN MODEL
+        model_version = st.selectbox(
+            "Chọn Model:", 
+            ("gemini-3.0-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash")
+        )
+
+        # 2. CHỌN CHẾ ĐỘ XỬ LÝ LỖI (TÍNH NĂNG MỚI)
+        fallback_mode = st.radio(
+            "Khi Model gặp lỗi (404/Overload):",
+            ("⚡ Tự động hạ cấp (Auto Fallback)", "🛑 Dừng lại & Báo cáo (Manual)")
+        )
+        
         st.divider()
         st.header("🛠️ 9 VŨ KHÍ")
         opt_audio_script = st.checkbox("Podcast Script", True)
@@ -80,7 +104,7 @@ def main():
             uploaded_files = st.file_uploader("Chọn file (mp3, wav, m4a)", type=['mp3', 'wav', 'm4a'], accept_multiple_files=True)
         with col_rec:
             st.subheader("2. Ghi âm trực tiếp")
-            audio_bytes = audio_recorder() # <--- ĐÃ SỬA LỆNH GỌI
+            audio_bytes = audio_recorder()
 
         if st.button("🔥 KÍCH HOẠT PHÂN TÍCH (9 VŨ KHÍ)", type="primary"):
             temp_paths = []
@@ -97,7 +121,7 @@ def main():
             if not temp_paths:
                 st.warning("Chưa có file nào để xử lý!")
             else:
-                with st.spinner(f"Đang xử lý {len(temp_paths)} file..."):
+                with st.spinner(f"Đang xử lý {len(temp_paths)} file với {model_version}..."):
                     try:
                         gemini_files_objs = []
                         for path in temp_paths:
@@ -118,12 +142,38 @@ def main():
                         if opt_slides: prompt += "- SLIDE OUTLINE: Dàn ý thuyết trình.\n"
                         if opt_table: prompt += "- DATA TABLE: Bảng dữ liệu Markdown.\n"
 
-                        model = genai.GenerativeModel(model_version)
-                        response = model.generate_content([prompt] + gemini_files_objs)
-                        st.session_state.analysis_result = response.text
-                        st.success("✅ Xử lý xong!")
+                        # --- LOGIC XỬ LÝ LỖI (THEO LỰA CHỌN CỦA BÁC) ---
+                        try:
+                            model = genai.GenerativeModel(model_version)
+                            response = model.generate_content([prompt] + gemini_files_objs)
+                            st.session_state.analysis_result = response.text
+                            st.success("✅ Xử lý xong!")
+                        
+                        except Exception as e:
+                            # TRƯỜNG HỢP 1: AUTO FALLBACK
+                            if "Auto Fallback" in fallback_mode:
+                                st.warning(f"⚠️ Model {model_version} gặp lỗi. Đang tự động chuyển sang 'gemini-1.5-flash' để cứu vãn tình thế...")
+                                backup_model = genai.GenerativeModel("gemini-1.5-flash")
+                                response = backup_model.generate_content([prompt] + gemini_files_objs)
+                                st.session_state.analysis_result = response.text
+                                st.success("✅ Xử lý xong (bằng Model dự phòng)!")
+                            
+                            # TRƯỜNG HỢP 2: MANUAL STOP
+                            else:
+                                st.error(f"❌ Model {model_version} không chạy được! (Lỗi: {e})")
+                                st.info("🔍 Đang quét danh sách Model khả dụng cho tài khoản của bạn...")
+                                valid_models = get_valid_models()
+                                if valid_models:
+                                    st.write("✅ **Các Model bạn có thể dùng ngay lúc này:**")
+                                    st.code("\n".join(valid_models))
+                                    st.warning("👉 Hãy chọn một trong các model trên ở Sidebar và bấm Xử lý lại.")
+                                else:
+                                    st.error("Không tìm thấy model nào khả dụng. Kiểm tra lại API Key.")
+                                st.stop() # Dừng chương trình tại đây
+                        # -------------------------------------------------------
+
                     except Exception as e:
-                        st.error(f"Lỗi: {e}")
+                        st.error(f"Lỗi hệ thống: {e}")
 
         if st.session_state.analysis_result:
             st.divider()
