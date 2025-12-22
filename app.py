@@ -7,6 +7,7 @@ import tempfile
 import os
 import time
 import mimetypes
+import re
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="Universal AI Studio Pro", page_icon="🌌", layout="wide")
@@ -40,9 +41,12 @@ def get_real_models():
             if 'generateContent' in m.supported_generation_methods and 'gemini' in m.name:
                 valid_list.append(m.name)
         valid_list.sort(reverse=True) 
+        # Đưa Pro lên đầu để khuyến khích dùng cho Deep Dive
+        if "models/gemini-1.5-pro" in valid_list:
+            valid_list.insert(0, valid_list.pop(valid_list.index("models/gemini-1.5-pro")))
         return valid_list
     except:
-        return ["models/gemini-1.5-flash", "models/gemini-1.5-pro"]
+        return ["models/gemini-1.5-pro", "models/gemini-1.5-flash"]
 
 def get_mime_type(file_path):
     mime_type, _ = mimetypes.guess_type(file_path)
@@ -66,7 +70,8 @@ def upload_to_gemini(path):
 def create_docx(content):
     doc = Document()
     doc.add_heading('UNIVERSAL AI REPORT', 0)
-    for line in content.split('\n'):
+    clean_content = re.sub(r'<[^>]+>', '', content) 
+    for line in clean_content.split('\n'):
         if line.startswith('# '): doc.add_heading(line.replace('# ', ''), level=1)
         elif line.startswith('## '): doc.add_heading(line.replace('## ', ''), level=2)
         elif line.startswith('### '): doc.add_heading(line.replace('### ', ''), level=3)
@@ -75,7 +80,7 @@ def create_docx(content):
 
 # --- MAIN APP ---
 def main():
-    st.title("🌌 Universal AI Studio (Pro Max)")
+    st.title("🌌 Universal AI Studio (Deep Dive Edition)")
     if not configure_genai(): return
 
     # --- SIDEBAR ---
@@ -83,36 +88,38 @@ def main():
         st.header("🧠 Cấu hình AI")
         with st.spinner("Đang đồng bộ Model..."):
             real_models = get_real_models()
-        if not real_models: st.error("Lỗi API Key"); return
-        model_version = st.selectbox("Engine:", real_models)
+        
+        # Logic chọn model thông minh
+        model_index = 0
+        # Nếu có Pro thì ưu tiên chọn Pro mặc định
+        for i, m in enumerate(real_models):
+            if "pro" in m: model_index = i; break
+            
+        model_version = st.selectbox("Engine (Khuyên dùng Pro cho chi tiết):", real_models, index=model_index)
 
-        detail_level = st.select_slider("Độ chi tiết:", options=["Ngắn gọn", "Tiêu chuẩn", "Chi tiết sâu"], value="Tiêu chuẩn")
+        detail_level = st.select_slider("Độ chi tiết:", options=["Ngắn gọn", "Tiêu chuẩn", "Chi tiết sâu (Deep Dive)"], value="Tiêu chuẩn")
 
         st.divider()
-        st.header("🛠️ KHO VŨ KHÍ (Chọn món)")
+        st.header("🛠️ KHO VŨ KHÍ")
         
-        # NHÓM 1: CỐT LÕI (ORIGINAL FEATURES)
         st.markdown("### 1. Phân tích Cốt lõi")
         opt_summary = st.checkbox("📝 Tóm tắt & Action Items", True)
-        opt_process = st.checkbox("🔄 Trích xuất Quy trình (Step-by-step)", False)
-        opt_prosody = st.checkbox("🎭 Phân tích Cảm xúc/Thái độ", False)
-        opt_gossip = st.checkbox("☕ Chế độ 'Bà tám' (Gossip)", False)
+        opt_process = st.checkbox("🔄 Trích xuất Quy trình", False)
+        opt_prosody = st.checkbox("🎭 Phân tích Cảm xúc", False)
+        opt_gossip = st.checkbox("☕ Chế độ 'Bà tám'", False)
 
-        # NHÓM 2: NOTEBOOKLM NGHE NHÌN
         st.markdown("### 2. Sáng tạo Nghe/Nhìn")
-        opt_audio_script = st.checkbox("🎙️ Podcast Script (Host/Guest)", False)
-        opt_video_script = st.checkbox("🎬 Video Script (2 cột)", False)
+        opt_audio_script = st.checkbox("🎙️ Podcast Script", False)
+        opt_video_script = st.checkbox("🎬 Video Script", False)
         opt_mindmap = st.checkbox("🧠 Mindmap (Sơ đồ tư duy)", True)
 
-        # NHÓM 3: HỌC TẬP & NGHIÊN CỨU
         st.markdown("### 3. Học tập & Nghiên cứu")
-        opt_report = st.checkbox("📑 Báo cáo chuyên sâu (Formal)", False)
-        opt_briefing = st.checkbox("📄 Briefing Doc (Tóm lược)", False)
-        opt_timeline = st.checkbox("⏳ Timeline (Dòng thời gian)", False)
+        opt_report = st.checkbox("📑 Báo cáo chuyên sâu", False)
+        opt_briefing = st.checkbox("📄 Briefing Doc", False)
+        opt_timeline = st.checkbox("⏳ Timeline", False)
         opt_quiz = st.checkbox("❓ Quiz & Flashcards", False)
         
-        # NHÓM 4: DỮ LIỆU
-        st.markdown("### 4. Dữ liệu & Trình bày")
+        st.markdown("### 4. Dữ liệu")
         opt_infographic = st.checkbox("📊 Infographic Data", False)
         opt_slides = st.checkbox("🖥️ Slide Outline", False)
         opt_table = st.checkbox("📉 Data Table", False)
@@ -138,7 +145,7 @@ def main():
             st.subheader("2. Ghi âm trực tiếp")
             audio_bytes = audio_recorder()
 
-        if st.button("🔥 KÍCH HOẠT PHÂN TÍCH TOÀN DIỆN", type="primary"):
+        if st.button("🔥 KÍCH HOẠT PHÂN TÍCH", type="primary"):
             temp_paths = []
             if uploaded_files:
                 for up_file in uploaded_files:
@@ -156,7 +163,7 @@ def main():
             if not temp_paths:
                 st.warning("Chưa có dữ liệu đầu vào!")
             else:
-                with st.spinner(f"Đang xử lý {len(temp_paths)} file... (Độ chi tiết: {detail_level})"):
+                with st.spinner(f"Đang xử lý sâu với {model_version}... (Có thể mất 1-2 phút)"):
                     try:
                         gemini_files_objs = []
                         for path in temp_paths:
@@ -166,77 +173,101 @@ def main():
                         
                         st.session_state.gemini_files = gemini_files_objs
                         
-                        # --- XÂY DỰNG PROMPT CẤU TRÚC ---
-                        prompt = f"""
-                        Bạn là chuyên gia phân tích dữ liệu đa phương thức. Hãy xử lý các file được cung cấp.
-                        Độ chi tiết yêu cầu: {detail_level}.
+                        # --- CẤU HÌNH PROMPT NÂNG CAO ---
                         
-                        HÃY TRẢ LỜI LẦN LƯỢT CÁC MỤC SAU (Nếu được yêu cầu). 
-                        QUAN TRỌNG: Bắt đầu mỗi mục bằng tiêu đề Markdown H2 (##) chính xác như bên dưới để hệ thống phân tách.
+                        # 1. Chỉ thị độ dài (System Instruction Injection)
+                        length_instruction = ""
+                        if detail_level == "Ngắn gọn":
+                            length_instruction = "Trả lời cực kỳ ngắn gọn, súc tích, gạch đầu dòng."
+                        elif detail_level == "Tiêu chuẩn":
+                            length_instruction = "Trả lời đầy đủ, cân bằng giữa chi tiết và tổng quan."
+                        else: # Deep Dive
+                            length_instruction = """
+                            YÊU CẦU ĐẶC BIỆT QUAN TRỌNG:
+                            - Phải viết RẤT CHI TIẾT, RẤT DÀI cho mỗi mục.
+                            - Mở rộng tối đa các ý, trích dẫn nguyên văn lời nói/nội dung trong file.
+                            - KHÔNG ĐƯỢC TÓM TẮT SƠ SÀI. Nếu mục nào dài, hãy viết thành nhiều đoạn văn.
+                            - Phân tích sâu sắc, đưa ra góc nhìn chuyên gia.
+                            """
+
+                        prompt = f"""
+                        Bạn là chuyên gia phân tích dữ liệu cấp cao.
+                        {length_instruction}
+                        
+                        QUY TẮC ĐỊNH DẠNG:
+                        1. Bắt đầu mỗi mục bằng tiêu đề H2 (##) chính xác.
+                        2. KHÔNG dùng thẻ XML.
+                        
+                        HÃY THỰC HIỆN CÁC MỤC SAU:
                         """
                         
-                        if opt_summary: prompt += "\n## 1. TÓM TẮT & ACTION ITEMS\n- Tóm tắt ý chính.\n- Bảng Action Items (Ai, Làm gì, Deadline).\n"
-                        if opt_process: prompt += "\n## 2. QUY TRÌNH (PROCESS)\n- Trích xuất quy trình dạng Step-by-step.\n"
-                        if opt_prosody: prompt += "\n## 3. CẢM XÚC & THÁI ĐỘ\n- Phân tích ngữ điệu, tâm lý người nói.\n"
-                        if opt_gossip: prompt += "\n## 4. GÓC BÀ TÁM (GOSSIP)\n- Kể lại giọng hài hước, đời thường.\n"
-                        
-                        if opt_audio_script: prompt += "\n## 5. PODCAST SCRIPT\n- Kịch bản đối thoại Host/Guest.\n"
-                        if opt_video_script: prompt += "\n## 6. VIDEO SCRIPT\n- Kịch bản video 2 cột.\n"
-                        if opt_mindmap: prompt += "\n## 7. MINDMAP CODE\n- Chỉ trả về mã code Mermaid.js (graph TD) trong block ```mermaid```.\n"
-                        
-                        if opt_report: prompt += "\n## 8. BÁO CÁO CHUYÊN SÂU\n- Văn phong học thuật/hành chính.\n"
-                        if opt_briefing: prompt += "\n## 9. BRIEFING DOC\n- Tài liệu tóm lược nhanh.\n"
-                        if opt_timeline: prompt += "\n## 10. TIMELINE SỰ KIỆN\n- Dòng thời gian các sự kiện.\n"
-                        if opt_quiz: prompt += "\n## 11. QUIZ & FLASHCARDS\n- Câu hỏi trắc nghiệm và thẻ nhớ.\n"
-                        
-                        if opt_infographic: prompt += "\n## 12. DỮ LIỆU INFOGRAPHIC\n- Các điểm nhấn số liệu.\n"
-                        if opt_slides: prompt += "\n## 13. DÀN Ý SLIDE\n- Cấu trúc bài thuyết trình.\n"
-                        if opt_table: prompt += "\n## 14. BẢNG DỮ LIỆU\n- Bảng Markdown so sánh/thống kê.\n"
+                        if opt_summary: prompt += "\n## 1. TÓM TẮT & ACTION ITEMS\n"
+                        if opt_process: prompt += "\n## 2. QUY TRÌNH (PROCESS)\n"
+                        if opt_prosody: prompt += "\n## 3. CẢM XÚC & THÁI ĐỘ\n"
+                        if opt_gossip: prompt += "\n## 4. GÓC BÀ TÁM (GOSSIP)\n"
+                        if opt_audio_script: prompt += "\n## 5. PODCAST SCRIPT\n"
+                        if opt_video_script: prompt += "\n## 6. VIDEO SCRIPT\n"
+                        if opt_mindmap: prompt += "\n## 7. MINDMAP CODE\n(Chỉ trả về code Mermaid trong block ```mermaid```)\n"
+                        if opt_report: prompt += "\n## 8. BÁO CÁO CHUYÊN SÂU\n"
+                        if opt_briefing: prompt += "\n## 9. BRIEFING DOC\n"
+                        if opt_timeline: prompt += "\n## 10. TIMELINE SỰ KIỆN\n"
+                        if opt_quiz: prompt += "\n## 11. QUIZ & FLASHCARDS\n"
+                        if opt_infographic: prompt += "\n## 12. DỮ LIỆU INFOGRAPHIC\n"
+                        if opt_slides: prompt += "\n## 13. DÀN Ý SLIDE\n"
+                        if opt_table: prompt += "\n## 14. BẢNG DỮ LIỆU\n"
+
+                        # --- CẤU HÌNH GENERATION CONFIG (QUAN TRỌNG) ---
+                        # Tăng max_output_tokens lên tối đa để không bị cắt
+                        generation_config = genai.types.GenerationConfig(
+                            max_output_tokens=8192, # Mức cao nhất
+                            temperature=0.7 # Đủ sáng tạo để viết dài
+                        )
 
                         model = genai.GenerativeModel(model_version)
-                        response = model.generate_content([prompt] + gemini_files_objs)
+                        response = model.generate_content(
+                            [prompt] + gemini_files_objs,
+                            generation_config=generation_config # Áp dụng cấu hình
+                        )
                         
                         st.session_state.analysis_result = response.text
                         st.success("✅ Xử lý xong!")
                     except Exception as e:
                         st.error(f"Lỗi: {e}")
 
-        # --- HIỂN THỊ KẾT QUẢ DẠNG THẺ (EXPANDERS) ---
+        # --- HIỂN THỊ KẾT QUẢ ---
         if st.session_state.analysis_result:
             st.divider()
             full_text = st.session_state.analysis_result
             
-            # Nút tải về tổng hợp
             doc = create_docx(full_text)
             doc_io = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
             doc.save(doc_io.name)
             with open(doc_io.name, "rb") as f:
-                st.download_button("📥 Tải Báo Cáo Tổng Hợp (.docx)", f, "Universal_Report.docx", type="primary")
+                st.download_button("📥 Tải Báo Cáo (.docx)", f, "Universal_Report.docx", type="primary")
             os.remove(doc_io.name)
             
-            st.markdown("### 🔍 KẾT QUẢ CHI TIẾT (Bấm để mở từng mục)")
+            st.markdown("### 🔍 KẾT QUẢ CHI TIẾT")
             
-            # Hàm hiển thị thông minh: Tự động cắt text theo tiêu đề ##
             sections = full_text.split("## ")
             for section in sections:
-                if not section.strip(): continue
+                section = section.strip()
+                if not section: continue
                 
-                # Lấy dòng đầu tiên làm tiêu đề thẻ
                 lines = section.split("\n")
                 title = lines[0].strip()
-                content = "\n".join(lines[1:])
+                content = "\n".join(lines[1:]).strip()
                 
-                # Xử lý riêng cho Mindmap để vẽ hình
+                if not content or content.startswith("<"): continue
+
                 if "MINDMAP" in title.upper() or "mermaid" in content:
                     with st.expander(f"🧠 {title}", expanded=True):
                         try:
                             mermaid_code = content.split("```mermaid")[1].split("```")[0]
-                            st_mermaid(mermaid_code, height=600) # Vẽ hình to hơn
+                            st_mermaid(mermaid_code, height=500)
                             st.code(mermaid_code, language="mermaid")
                         except:
                             st.markdown(content)
                 else:
-                    # Các mục khác dùng Expander thường
                     with st.expander(f"📌 {title}", expanded=False):
                         st.markdown(content)
 
@@ -258,7 +289,7 @@ def main():
                             chat_model = genai.GenerativeModel(model_version)
                             response = chat_model.generate_content(
                                 st.session_state.gemini_files + 
-                                [f"Yêu cầu: Trả lời dựa trên file. Độ chi tiết: {detail_level}. Câu hỏi: {user_input}"]
+                                [f"Yêu cầu: Trả lời chi tiết. Câu hỏi: {user_input}"]
                             )
                             st.markdown(response.text)
                             st.session_state.chat_history.append({"role": "assistant", "content": response.text})
