@@ -11,7 +11,7 @@ import re
 import random
 
 # --- CẤU HÌNH TRANG ---
-st.set_page_config(page_title="Universal AI Studio (Split Features)", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Universal AI Studio", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
     .stButton>button {width: 100%; border-radius: 8px; height: 3em; font-weight: bold; background: linear-gradient(to right, #c31432, #240b36); color: white;}
@@ -58,7 +58,6 @@ def get_real_models():
                 valid_list.append(m.name)
         valid_list.sort(reverse=True)
         
-        # Ưu tiên Flash 3.0 / 2.0 Exp / 1.5 Flash
         priority_keywords = ["gemini-3.0-flash", "gemini-2.0-flash-exp", "gemini-1.5-flash"]
         for keyword in priority_keywords:
             found = next((m for m in valid_list if keyword in m), None)
@@ -102,16 +101,108 @@ def create_docx(content):
 
 # --- MAIN APP ---
 def main():
-    st.title("🇻🇳 Universal AI Studio (Split Features)")
+    st.title("🇻🇳 Universal AI Studio (Final Stable)")
     
     # --- SIDEBAR ---
     with st.sidebar:
-        st.header("🛠️ KHO VŨ KHÍ (Chọn món)")
+        st.header("🛠️ KHO VŨ KHÍ")
         
         # 1. CỐT LÕI
         st.markdown("### 1. Phân tích Cốt lõi")
         opt_transcript = st.checkbox("📝 Gỡ băng (Transcript)", False) 
         opt_summary = st.checkbox("📋 Tóm tắt nội dung", True)
-        opt_action = st.checkbox("✅ Action Items (Hành động)", True) # Tách riêng
+        opt_action = st.checkbox("✅ Action Items", True)
         opt_process = st.checkbox("🔄 Trích xuất Quy trình", False)
-        opt_prosody = st.checkbox("🎭 Phân tích Thái độ/Cả
+        opt_prosody = st.checkbox("🎭 Phân tích Thái độ", False)
+        opt_gossip = st.checkbox("☕ Chế độ Bà tám", False)
+
+        # 2. SÁNG TẠO
+        st.markdown("### 2. Sáng tạo Nghe/Nhìn")
+        opt_podcast = st.checkbox("🎙️ Kịch bản Podcast", False)
+        opt_video = st.checkbox("🎬 Kịch bản Video", False)
+        opt_mindmap = st.checkbox("🧠 Sơ đồ tư duy", True)
+
+        # 3. NGHIÊN CỨU
+        st.markdown("### 3. Học tập & Nghiên cứu")
+        opt_report = st.checkbox("📑 Báo cáo chuyên sâu", False)
+        opt_briefing = st.checkbox("📄 Tài liệu tóm lược", False)
+        opt_timeline = st.checkbox("⏳ Dòng thời gian", False)
+        opt_quiz = st.checkbox("❓ Câu hỏi Trắc nghiệm", False)
+        opt_flashcard = st.checkbox("🎴 Thẻ ghi nhớ", False)
+        
+        # 4. DỮ LIỆU
+        st.markdown("### 4. Dữ liệu")
+        opt_infographic = st.checkbox("📊 Dữ liệu Infographic", False)
+        opt_slides = st.checkbox("🖥️ Dàn ý Slide", False)
+        opt_table = st.checkbox("📉 Bảng số liệu", False)
+
+        st.divider()
+        
+        # CẤU HÌNH ẨN
+        with st.expander("⚙️ Cấu hình & API Key"):
+            user_api_key = st.text_input("Nhập Key riêng:", type="password")
+            is_connected = configure_genai(user_api_key)
+            if is_connected:
+                st.success("Đã kết nối!")
+                real_models = get_real_models()
+                model_version = st.selectbox("Model:", real_models, index=0)
+                detail_level = st.select_slider("Độ chi tiết:", options=["Sơ lược", "Tiêu chuẩn", "Chi tiết sâu"], value="Tiêu chuẩn")
+            else:
+                st.error("Chưa kết nối!")
+                model_version = "models/gemini-1.5-flash"
+                detail_level = "Tiêu chuẩn"
+
+        if st.button("🗑️ Reset"):
+            st.session_state.clear()
+            st.rerun()
+
+    # --- GIAO DIỆN TAB ---
+    tab1, tab2 = st.tabs(["📂 Upload & Phân tích", "💬 Chat Tiếng Việt"])
+
+    # === TAB 1 ===
+    with tab1:
+        col_up, col_rec = st.columns(2)
+        with col_up:
+            st.subheader("1. Upload File")
+            uploaded_files = st.file_uploader("Chọn file (Audio, PDF, Text...)", type=['mp3', 'wav', 'm4a', 'pdf', 'txt', 'md', 'csv'], accept_multiple_files=True)
+        with col_rec:
+            st.subheader("2. Ghi âm")
+            audio_bytes = audio_recorder()
+
+        if st.button("🔥 BẮT ĐẦU PHÂN TÍCH", type="primary"):
+            temp_paths = []
+            if uploaded_files:
+                for up_file in uploaded_files:
+                    file_ext = os.path.splitext(up_file.name)[1]
+                    if not file_ext: file_ext = ".txt"
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
+                        tmp.write(up_file.getvalue())
+                        temp_paths.append(tmp.name)
+            if audio_bytes:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                    tmp.write(audio_bytes)
+                    temp_paths.append(tmp.name)
+            
+            if not temp_paths:
+                st.warning("Vui lòng chọn file!")
+            else:
+                with st.spinner(f"Đang xử lý {len(temp_paths)} file..."):
+                    try:
+                        gemini_files_objs = []
+                        for path in temp_paths:
+                            g_file = upload_to_gemini(path)
+                            gemini_files_objs.append(g_file)
+                            os.remove(path)
+                        
+                        st.session_state.gemini_files = gemini_files_objs
+                        
+                        # --- XÂY DỰNG PROMPT (DÙNG LIST ĐỂ TRÁNH LỖI SYNTAX) ---
+                        length_instruction = "Viết chi tiết, đầy đủ." if detail_level == "Chi tiết sâu" else "Viết ngắn gọn."
+                        
+                        base_prompt = f"""
+                        Bạn là chuyên gia phân tích. Nhiệm vụ: Xử lý file và tạo báo cáo Tiếng Việt.
+                        QUY TẮC:
+                        1. Bắt đầu mỗi mục bằng tiêu đề H2 (##) CHÍNH XÁC.
+                        2. KHÔNG dùng H2 cho nội dung con.
+                        3. KHÔNG trả về XML.
+                        4. {length_instruction}
