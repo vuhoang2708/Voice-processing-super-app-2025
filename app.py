@@ -24,25 +24,37 @@ if "chat_history" not in st.session_state: st.session_state.chat_history = []
 if "gemini_files" not in st.session_state: st.session_state.gemini_files = [] 
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = ""
 
-# --- HÀM CẤU HÌNH KEY ---
+# --- HÀM CẤU HÌNH KEY (ĐÃ FIX LỖI NHẬN DIỆN) ---
 def configure_genai(user_key=None):
     api_key = None
+    
+    # 1. Ưu tiên Key người dùng nhập trực tiếp
     if user_key:
         api_key = user_key
         st.toast("🔑 Đang dùng Key cá nhân.")
     else:
+        # 2. Tự động tìm Key trong Secrets (Hỗ trợ cả kiểu cũ và mới)
         try:
-            system_keys = st.secrets["SYSTEM_KEYS"]
-            if isinstance(system_keys, str): system_keys = [system_keys]
-            api_key = random.choice(system_keys)
+            if "SYSTEM_KEYS" in st.secrets:
+                # Nếu là danh sách nhiều key (Kiểu mới)
+                system_keys = st.secrets["SYSTEM_KEYS"]
+                if isinstance(system_keys, str): system_keys = [system_keys] # Đề phòng nhập sai format
+                api_key = random.choice(system_keys)
+            elif "GOOGLE_API_KEY" in st.secrets:
+                # Nếu là key đơn lẻ (Kiểu cũ)
+                api_key = st.secrets["GOOGLE_API_KEY"]
+            else:
+                raise Exception("Không tìm thấy Key")
         except:
-            st.error("🚨 Lỗi Key hệ thống. Vui lòng nhập Key cá nhân.")
+            st.error("🚨 Lỗi: Không tìm thấy API Key trong Secrets. Vui lòng nhập Key cá nhân vào ô bên dưới.")
             return False
+
+    # 3. Thử kết nối
     try:
         genai.configure(api_key=api_key)
         return True
     except:
-        st.error("❌ Key không hợp lệ!")
+        st.error("❌ API Key không hợp lệ hoặc đã hết hạn mức!")
         return False
 
 def get_real_models():
@@ -97,9 +109,12 @@ def main():
     # --- SIDEBAR ---
     with st.sidebar:
         st.header("🧠 Cấu hình AI")
+        
+        # Ô nhập key ẩn trong Expander
         with st.expander("🔧 Cài đặt nâng cao (Key dự phòng)"):
             user_api_key = st.text_input("Nhập Key riêng:", type="password")
         
+        # Gọi hàm cấu hình (Code mới sẽ tự xử lý)
         if not configure_genai(user_api_key): return
 
         with st.spinner("Đang kết nối..."):
@@ -116,7 +131,6 @@ def main():
         st.header("🛠️ CHỌN TÍNH NĂNG")
         
         st.markdown("### 1. Cốt lõi")
-        # ĐÃ KHÔI PHỤC TÍNH NĂNG GỠ BĂNG
         opt_transcript = st.checkbox("📝 Gỡ băng chi tiết (Transcript)", False) 
         opt_summary = st.checkbox("📋 Tóm tắt & Hành động", True)
         opt_process = st.checkbox("🔄 Trích xuất Quy trình", False)
@@ -215,7 +229,6 @@ def main():
                         DANH SÁCH CÁC MỤC CẦN LÀM:
                         """
                         
-                        # ĐÃ THÊM LẠI TRANSCRIPT VÀO PROMPT
                         if opt_transcript: prompt += "\n## 0. GỠ BĂNG CHI TIẾT (TRANSCRIPT)\n- Ghi lại toàn bộ nội dung hội thoại, phân biệt người nói (nếu có thể).\n"
                         if opt_summary: prompt += "\n## 1. TÓM TẮT & HÀNH ĐỘNG\n"
                         if opt_process: prompt += "\n## 2. QUY TRÌNH THỰC HIỆN\n"
@@ -226,88 +239,4 @@ def main():
                         if opt_mindmap: prompt += "\n## 7. MÃ SƠ ĐỒ TƯ DUY (MERMAID)\n(Chỉ trả về code trong block ```mermaid```)\n"
                         if opt_report: prompt += "\n## 8. BÁO CÁO CHUYÊN SÂU\n"
                         if opt_briefing: prompt += "\n## 9. TÀI LIỆU TÓM LƯỢC\n"
-                        if opt_timeline: prompt += "\n## 10. DÒNG THỜI GIAN SỰ KIỆN\n"
-                        if opt_quiz: prompt += "\n## 11. TRẮC NGHIỆM & THẺ NHỚ\n(Dùng H3 cho từng phần, không dùng H2)\n"
-                        if opt_infographic: prompt += "\n## 12. DỮ LIỆU ĐỒ HỌA (INFOGRAPHIC)\n"
-                        if opt_slides: prompt += "\n## 13. DÀN Ý BÀI THUYẾT TRÌNH\n"
-                        if opt_table: prompt += "\n## 14. BẢNG SỐ LIỆU CHI TIẾT\n"
-
-                        generation_config = genai.types.GenerationConfig(
-                            max_output_tokens=8192, 
-                            temperature=0.5
-                        )
-
-                        model = genai.GenerativeModel(model_version)
-                        response = model.generate_content(
-                            [prompt] + gemini_files_objs,
-                            generation_config=generation_config
-                        )
-                        
-                        st.session_state.analysis_result = response.text
-                        st.success("✅ Đã phân tích xong!")
-                    except Exception as e:
-                        st.error(f"Lỗi: {e}")
-
-        # --- HIỂN THỊ KẾT QUẢ ---
-        if st.session_state.analysis_result:
-            st.divider()
-            full_text = st.session_state.analysis_result
-            
-            doc = create_docx(full_text)
-            doc_io = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-            doc.save(doc_io.name)
-            with open(doc_io.name, "rb") as f:
-                st.download_button("📥 Tải Báo Cáo Word (.docx)", f, "Bao_Cao_AI.docx", type="primary")
-            os.remove(doc_io.name)
-            
-            st.markdown("### 🔍 KẾT QUẢ CHI TIẾT")
-            
-            sections = full_text.split("## ")
-            for section in sections:
-                section = section.strip()
-                if not section: continue
-                
-                lines = section.split("\n")
-                title = lines[0].strip()
-                content = "\n".join(lines[1:]).strip()
-                
-                if not content or content.startswith("<"): continue
-
-                if "MERMAID" in title.upper() or "SƠ ĐỒ" in title.upper():
-                    with st.expander(f"🧠 {title}", expanded=True):
-                        try:
-                            mermaid_code = content.split("```mermaid")[1].split("```")[0]
-                            st_mermaid(mermaid_code, height=500)
-                            st.code(mermaid_code, language="mermaid")
-                        except:
-                            st.markdown(content)
-                else:
-                    with st.expander(f"📌 {title}", expanded=False):
-                        st.markdown(content)
-
-    # === TAB 2 ===
-    with tab2:
-        st.header("💬 Chat với Dữ liệu")
-        if not st.session_state.gemini_files:
-            st.info("👈 Vui lòng Upload file ở Tab 1 trước.")
-        else:
-            for msg in st.session_state.chat_history:
-                with st.chat_message(msg["role"]): st.markdown(msg["content"])
-            
-            if user_input := st.chat_input("Hỏi chi tiết..."):
-                st.session_state.chat_history.append({"role": "user", "content": user_input})
-                with st.chat_message("user"): st.markdown(user_input)
-                with st.chat_message("assistant"):
-                    with st.spinner("Đang suy nghĩ..."):
-                        try:
-                            chat_model = genai.GenerativeModel(model_version)
-                            response = chat_model.generate_content(
-                                st.session_state.gemini_files + 
-                                [f"Yêu cầu: Trả lời bằng Tiếng Việt. Câu hỏi: {user_input}"]
-                            )
-                            st.markdown(response.text)
-                            st.session_state.chat_history.append({"role": "assistant", "content": response.text})
-                        except Exception as e: st.error(f"Lỗi chat: {e}")
-
-if __name__ == "__main__":
-    main()
+                        if opt_timeline: prompt += "\n## 10. DÒNG THỜI GIAN SỰ
