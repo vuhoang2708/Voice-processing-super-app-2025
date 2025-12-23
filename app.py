@@ -37,7 +37,7 @@ def get_optimized_models():
     try:
         models = genai.list_models()
         valid = [m.name for m in models if 'generateContent' in m.supported_generation_methods and 'gemini' in m.name]
-        order = ["gemini-3.0-flash-preview", "gemini-1.5-flash", "gemini-1.5-pro"]
+        order = ["gemini-3.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
         final_list = []
         for target in order:
             for v in valid:
