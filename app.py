@@ -8,9 +8,10 @@ import os
 import time
 import mimetypes
 import re
+import random
 
 # --- CẤU HÌNH TRANG ---
-st.set_page_config(page_title="Universal AI Studio (Vietnamese)", page_icon="🇻🇳", layout="wide")
+st.set_page_config(page_title="Universal AI Studio (Full Option)", page_icon="🇻🇳", layout="wide")
 st.markdown("""
 <style>
     .stButton>button {width: 100%; border-radius: 8px; height: 3em; font-weight: bold; background: linear-gradient(to right, #c31432, #240b36); color: white;}
@@ -23,14 +24,25 @@ if "chat_history" not in st.session_state: st.session_state.chat_history = []
 if "gemini_files" not in st.session_state: st.session_state.gemini_files = [] 
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = ""
 
-# --- HÀM HỖ TRỢ ---
-def configure_genai():
+# --- HÀM CẤU HÌNH KEY ---
+def configure_genai(user_key=None):
+    api_key = None
+    if user_key:
+        api_key = user_key
+        st.toast("🔑 Đang dùng Key cá nhân.")
+    else:
+        try:
+            system_keys = st.secrets["SYSTEM_KEYS"]
+            if isinstance(system_keys, str): system_keys = [system_keys]
+            api_key = random.choice(system_keys)
+        except:
+            st.error("🚨 Lỗi Key hệ thống hoặc đã hết giới hạn API. Vui lòng nhập Key cá nhân.")
+            return False
     try:
-        api_key = st.secrets["GOOGLE_API_KEY"]
         genai.configure(api_key=api_key)
         return True
     except:
-        st.error("🚨 Chưa nhập API Key trong Secrets!")
+        st.error("❌ Key không hợp lệ!")
         return False
 
 def get_real_models():
@@ -41,7 +53,6 @@ def get_real_models():
             if 'generateContent' in m.supported_generation_methods and 'gemini' in m.name:
                 valid_list.append(m.name)
         valid_list.sort(reverse=True) 
-        # Ưu tiên Pro lên đầu
         if "models/gemini-1.5-pro" in valid_list:
             valid_list.insert(0, valid_list.pop(valid_list.index("models/gemini-1.5-pro")))
         return valid_list
@@ -69,8 +80,9 @@ def upload_to_gemini(path):
 
 def create_docx(content):
     doc = Document()
-    doc.add_heading('BÁO CÁO PHÂN TÍCH AI', 0)
-    clean_content = re.sub(r'<[^>]+>', '', content) 
+    doc.add_heading('BÁO CÁO PHÂN TÍCH ', 0)
+    clean_content = re.sub(r'<[^>]+>', '', content)
+    clean_content = re.sub(r'\n\s*\n', '\n\n', clean_content)
     for line in clean_content.split('\n'):
         if line.startswith('# '): doc.add_heading(line.replace('# ', ''), level=1)
         elif line.startswith('## '): doc.add_heading(line.replace('## ', ''), level=2)
@@ -80,30 +92,36 @@ def create_docx(content):
 
 # --- MAIN APP ---
 def main():
-    st.title("🇻🇳 Universal AI Studio (Bản Việt Hóa)")
-    if not configure_genai(): return
-
+    st.title("🇻🇳 Universal AI Studio (Full Option)")
+    
     # --- SIDEBAR ---
     with st.sidebar:
         st.header("🧠 Cấu hình AI")
-        with st.spinner("Đang đồng bộ Model..."):
+        with st.expander("🔧 Cài đặt nâng cao (Key dự phòng)"):
+            user_api_key = st.text_input("Nhập Key riêng:", type="password")
+        
+        if not configure_genai(user_api_key): return
+
+        with st.spinner("Đang kết nối..."):
             real_models = get_real_models()
         
         model_index = 0
         for i, m in enumerate(real_models):
             if "pro" in m: model_index = i; break
-        model_version = st.selectbox("Engine (Nên dùng Pro):", real_models, index=model_index)
+        model_version = st.selectbox("Engine:", real_models, index=model_index)
 
         detail_level = st.select_slider("Độ chi tiết:", options=["Sơ lược", "Tiêu chuẩn", "Chi tiết sâu"], value="Tiêu chuẩn")
 
         st.divider()
         st.header("🛠️ CHỌN TÍNH NĂNG")
         
-        st.markdown("### 1. Cốt lõi")
-        opt_summary = st.checkbox("📝 Tóm tắt & Hành động", True)
+        st.markdown("### 1. Tính năng chính ")
+        # ĐÃ KHÔI PHỤC TÍNH NĂNG GỠ BĂNG
+        opt_transcript = st.checkbox("📝 Gỡ băng đầy đủ (Full Transcript)", False) 
+        opt_summary = st.checkbox("📋 Tóm tắt & Kế hoạch Hành động", True)
         opt_process = st.checkbox("🔄 Trích xuất Quy trình", False)
-        opt_prosody = st.checkbox("🎭 Phân tích Thái độ", False)
-        opt_gossip = st.checkbox("☕ Chế độ 'Bà tám'", False)
+        opt_prosody = st.checkbox("🎭 Phân tích Biểu cảm", False)
+        opt_gossip = st.checkbox("☕ 'Bà tám'", False)
 
         st.markdown("### 2. Sáng tạo")
         opt_audio_script = st.checkbox("🎙️ Kịch bản Podcast", False)
@@ -136,10 +154,10 @@ def main():
         
         with col_up:
             st.subheader("1. Upload File")
-            uploaded_files = st.file_uploader("Chọn file (Audio, PDF, Text...)", type=['mp3', 'wav', 'm4a', 'pdf', 'txt', 'md', 'csv'], accept_multiple_files=True)
+            uploaded_files = st.file_uploader("Chọn file audio và/hoặc các tài liệu khác ( PDF, Text...)", type=['mp3', 'wav', 'm4a', 'pdf', 'txt', 'md', 'csv'], accept_multiple_files=True)
         
         with col_rec:
-            st.subheader("2. Ghi âm")
+            st.subheader("2. Ghi âm trực tiếp cuộc nói chuyện")
             audio_bytes = audio_recorder()
 
         if st.button("🔥 BẮT ĐẦU PHÂN TÍCH", type="primary"):
@@ -170,7 +188,7 @@ def main():
                         
                         st.session_state.gemini_files = gemini_files_objs
                         
-                        # --- PROMPT VIỆT HÓA 100% ---
+                        # --- PROMPT ---
                         length_instruction = ""
                         if detail_level == "Sơ lược":
                             length_instruction = "Trả lời ngắn gọn, gạch đầu dòng."
@@ -181,23 +199,24 @@ def main():
                             YÊU CẦU CHI TIẾT SÂU (DEEP DIVE):
                             - Viết rất chi tiết, dài, mở rộng ý.
                             - Trích dẫn nguyên văn lời nói quan trọng.
-                            - Phân tích sâu sắc như chuyên gia.
                             """
 
                         prompt = f"""
-                        Bạn là chuyên gia phân tích nội dung và biên tập viên Tiếng Việt cao cấp.
+                        Bạn là chuyên gia phân tích nội dung Tiếng Việt.
                         Nhiệm vụ: Phân tích các file đính kèm và tạo báo cáo.
                         
-                        YÊU CẦU BẮT BUỘC:
-                        1. NGÔN NGỮ: 100% TIẾNG VIỆT (trừ các thuật ngữ chuyên ngành không thể dịch).
-                        2. ĐỊNH DẠNG: Bắt đầu mỗi mục bằng tiêu đề H2 (##) CHÍNH XÁC như yêu cầu bên dưới.
-                        3. KHÔNG BỎ TRỐNG: Nếu mục nào không có thông tin trong file, hãy ghi: "Không tìm thấy dữ liệu phù hợp trong file".
-                        4. {length_instruction}
+                        QUY TẮC ĐỊNH DẠNG (BẮT BUỘC TUÂN THỦ):
+                        1. Bắt đầu mỗi mục lớn bằng tiêu đề H2 (##) CHÍNH XÁC như danh sách yêu cầu bên dưới.
+                        2. TUYỆT ĐỐI KHÔNG dùng H2 (##) cho các mục con bên trong. Hãy dùng H3 (###) hoặc in đậm (**).
+                        3. KHÔNG trả về thẻ XML/HTML.
+                        4. Nếu thiếu thông tin, ghi: "Không tìm thấy dữ liệu".
+                        5. {length_instruction}
                         
                         DANH SÁCH CÁC MỤC CẦN LÀM:
                         """
                         
-                        # Dùng Tiêu đề Tiếng Việt để ép AI trả lời Tiếng Việt
+                        # ĐÃ THÊM LẠI TRANSCRIPT VÀO PROMPT
+                        if opt_transcript: prompt += "\n## 0. GỠ BĂNG CHI TIẾT (TRANSCRIPT)\n- Ghi lại toàn bộ nội dung hội thoại, phân biệt người nói (nếu có thể).\n"
                         if opt_summary: prompt += "\n## 1. TÓM TẮT & HÀNH ĐỘNG\n"
                         if opt_process: prompt += "\n## 2. QUY TRÌNH THỰC HIỆN\n"
                         if opt_prosody: prompt += "\n## 3. PHÂN TÍCH CẢM XÚC & THÁI ĐỘ\n"
@@ -208,15 +227,14 @@ def main():
                         if opt_report: prompt += "\n## 8. BÁO CÁO CHUYÊN SÂU\n"
                         if opt_briefing: prompt += "\n## 9. TÀI LIỆU TÓM LƯỢC\n"
                         if opt_timeline: prompt += "\n## 10. DÒNG THỜI GIAN SỰ KIỆN\n"
-                        if opt_quiz: prompt += "\n## 11. TRẮC NGHIỆM & THẺ NHỚ\n"
+                        if opt_quiz: prompt += "\n## 11. TRẮC NGHIỆM & THẺ NHỚ\n(Dùng H3 cho từng phần, không dùng H2)\n"
                         if opt_infographic: prompt += "\n## 12. DỮ LIỆU ĐỒ HỌA (INFOGRAPHIC)\n"
                         if opt_slides: prompt += "\n## 13. DÀN Ý BÀI THUYẾT TRÌNH\n"
                         if opt_table: prompt += "\n## 14. BẢNG SỐ LIỆU CHI TIẾT\n"
 
-                        # Cấu hình sinh văn bản tối đa
                         generation_config = genai.types.GenerationConfig(
                             max_output_tokens=8192, 
-                            temperature=0.5 # Giảm nhiệt độ để bớt "ảo giác" tiếng Anh
+                            temperature=0.5
                         )
 
                         model = genai.GenerativeModel(model_version)
@@ -251,46 +269,3 @@ def main():
                 
                 lines = section.split("\n")
                 title = lines[0].strip()
-                content = "\n".join(lines[1:]).strip()
-                
-                if not content or content.startswith("<"): continue
-
-                # Logic hiển thị thông minh
-                if "MERMAID" in title.upper() or "SƠ ĐỒ" in title.upper():
-                    with st.expander(f"🧠 {title}", expanded=True):
-                        try:
-                            mermaid_code = content.split("```mermaid")[1].split("```")[0]
-                            st_mermaid(mermaid_code, height=500)
-                            st.code(mermaid_code, language="mermaid")
-                        except:
-                            st.markdown(content)
-                else:
-                    with st.expander(f"📌 {title}", expanded=False):
-                        st.markdown(content)
-
-    # === TAB 2 ===
-    with tab2:
-        st.header("💬 Chat với Dữ liệu")
-        if not st.session_state.gemini_files:
-            st.info("👈 Vui lòng Upload file ở Tab 1 trước.")
-        else:
-            for msg in st.session_state.chat_history:
-                with st.chat_message(msg["role"]): st.markdown(msg["content"])
-            
-            if user_input := st.chat_input("Hỏi chi tiết..."):
-                st.session_state.chat_history.append({"role": "user", "content": user_input})
-                with st.chat_message("user"): st.markdown(user_input)
-                with st.chat_message("assistant"):
-                    with st.spinner("Đang suy nghĩ..."):
-                        try:
-                            chat_model = genai.GenerativeModel(model_version)
-                            response = chat_model.generate_content(
-                                st.session_state.gemini_files + 
-                                [f"Yêu cầu: Trả lời bằng Tiếng Việt. Câu hỏi: {user_input}"]
-                            )
-                            st.markdown(response.text)
-                            st.session_state.chat_history.append({"role": "assistant", "content": response.text})
-                        except Exception as e: st.error(f"Lỗi chat: {e}")
-
-if __name__ == "__main__":
-    main()
