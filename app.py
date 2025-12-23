@@ -36,7 +36,7 @@ def configure_genai(user_key=None):
             if isinstance(system_keys, str): system_keys = [system_keys]
             api_key = random.choice(system_keys)
         except:
-            st.error("🚨 Lỗi Key hệ thống hoặc đã hết giới hạn API. Vui lòng nhập Key cá nhân.")
+            st.error("🚨 Lỗi Key hệ thống. Vui lòng nhập Key cá nhân.")
             return False
     try:
         genai.configure(api_key=api_key)
@@ -80,7 +80,7 @@ def upload_to_gemini(path):
 
 def create_docx(content):
     doc = Document()
-    doc.add_heading('BÁO CÁO PHÂN TÍCH ', 0)
+    doc.add_heading('BÁO CÁO PHÂN TÍCH AI', 0)
     clean_content = re.sub(r'<[^>]+>', '', content)
     clean_content = re.sub(r'\n\s*\n', '\n\n', clean_content)
     for line in clean_content.split('\n'):
@@ -115,13 +115,13 @@ def main():
         st.divider()
         st.header("🛠️ CHỌN TÍNH NĂNG")
         
-        st.markdown("### 1. Tính năng chính ")
+        st.markdown("### 1. Cốt lõi")
         # ĐÃ KHÔI PHỤC TÍNH NĂNG GỠ BĂNG
-        opt_transcript = st.checkbox("📝 Gỡ băng đầy đủ (Full Transcript)", False) 
-        opt_summary = st.checkbox("📋 Tóm tắt & Kế hoạch Hành động", True)
+        opt_transcript = st.checkbox("📝 Gỡ băng chi tiết (Transcript)", False) 
+        opt_summary = st.checkbox("📋 Tóm tắt & Hành động", True)
         opt_process = st.checkbox("🔄 Trích xuất Quy trình", False)
-        opt_prosody = st.checkbox("🎭 Phân tích Biểu cảm", False)
-        opt_gossip = st.checkbox("☕ 'Bà tám'", False)
+        opt_prosody = st.checkbox("🎭 Phân tích Thái độ", False)
+        opt_gossip = st.checkbox("☕ Chế độ 'Bà tám'", False)
 
         st.markdown("### 2. Sáng tạo")
         opt_audio_script = st.checkbox("🎙️ Kịch bản Podcast", False)
@@ -154,10 +154,10 @@ def main():
         
         with col_up:
             st.subheader("1. Upload File")
-            uploaded_files = st.file_uploader("Chọn file audio và/hoặc các tài liệu khác ( PDF, Text...)", type=['mp3', 'wav', 'm4a', 'pdf', 'txt', 'md', 'csv'], accept_multiple_files=True)
+            uploaded_files = st.file_uploader("Chọn file (Audio, PDF, Text...)", type=['mp3', 'wav', 'm4a', 'pdf', 'txt', 'md', 'csv'], accept_multiple_files=True)
         
         with col_rec:
-            st.subheader("2. Ghi âm trực tiếp cuộc nói chuyện")
+            st.subheader("2. Ghi âm")
             audio_bytes = audio_recorder()
 
         if st.button("🔥 BẮT ĐẦU PHÂN TÍCH", type="primary"):
@@ -269,3 +269,45 @@ def main():
                 
                 lines = section.split("\n")
                 title = lines[0].strip()
+                content = "\n".join(lines[1:]).strip()
+                
+                if not content or content.startswith("<"): continue
+
+                if "MERMAID" in title.upper() or "SƠ ĐỒ" in title.upper():
+                    with st.expander(f"🧠 {title}", expanded=True):
+                        try:
+                            mermaid_code = content.split("```mermaid")[1].split("```")[0]
+                            st_mermaid(mermaid_code, height=500)
+                            st.code(mermaid_code, language="mermaid")
+                        except:
+                            st.markdown(content)
+                else:
+                    with st.expander(f"📌 {title}", expanded=False):
+                        st.markdown(content)
+
+    # === TAB 2 ===
+    with tab2:
+        st.header("💬 Chat với Dữ liệu")
+        if not st.session_state.gemini_files:
+            st.info("👈 Vui lòng Upload file ở Tab 1 trước.")
+        else:
+            for msg in st.session_state.chat_history:
+                with st.chat_message(msg["role"]): st.markdown(msg["content"])
+            
+            if user_input := st.chat_input("Hỏi chi tiết..."):
+                st.session_state.chat_history.append({"role": "user", "content": user_input})
+                with st.chat_message("user"): st.markdown(user_input)
+                with st.chat_message("assistant"):
+                    with st.spinner("Đang suy nghĩ..."):
+                        try:
+                            chat_model = genai.GenerativeModel(model_version)
+                            response = chat_model.generate_content(
+                                st.session_state.gemini_files + 
+                                [f"Yêu cầu: Trả lời bằng Tiếng Việt. Câu hỏi: {user_input}"]
+                            )
+                            st.markdown(response.text)
+                            st.session_state.chat_history.append({"role": "assistant", "content": response.text})
+                        except Exception as e: st.error(f"Lỗi chat: {e}")
+
+if __name__ == "__main__":
+    main()
