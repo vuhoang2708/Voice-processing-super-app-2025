@@ -11,13 +11,17 @@ import re
 import random
 
 # --- CẤU HÌNH TRANG ---
-st.set_page_config(page_title="AI Meeting Assistant Pro", page_icon="🎙️", layout="wide")
+st.set_page_config(page_title="Universal AI Studio Pro", page_icon="🛡️", layout="wide")
 st.markdown("""
 <style>
     .stButton>button {width: 100%; border-radius: 8px; height: 3em; font-weight: bold; background: #c31432; color: white;}
-    .stExpander {border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 10px;}
+    .stExpander {border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 10px; background-color: #ffffff;}
+    .stMarkdown h2 {color: #1a2a6c; border-bottom: 2px solid #eee; padding-bottom: 5px;}
 </style>
 """, unsafe_allow_html=True)
+
+# --- BIẾN TOÀN CỤC (CHỐNG LỖI SCOPE) ---
+STRICT_RULES = "CHỈ DÙNG FILE GỐC. CẤM BỊA TÊN DIỄN GIẢ. CẤM BỊA NỘI DUNG. TRÍCH DẪN GIỜ [mm:ss]."
 
 # --- QUẢN LÝ SESSION ---
 if "chat_history" not in st.session_state: st.session_state.chat_history = []
@@ -34,16 +38,26 @@ def configure_genai(user_key=None):
     except: return False
 
 def get_optimized_models():
+    """LẤY DANH SÁCH THẬT VÀ ƯU TIÊN GEMINI-3-FLASH-PREVIEW"""
     try:
         models = genai.list_models()
         valid = [m.name for m in models if 'generateContent' in m.supported_generation_methods and 'gemini' in m.name]
-        order = ["gemini-3.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+        
+        # DANH SÁCH ƯU TIÊN (DÙNG ĐÚNG TÊN PREVIEW)
+        priority = ["gemini-3-flash-preview", "gemini-2.0-flash-exp", "gemini-1.5-flash"]
         final_list = []
-        for target in order:
-            for v in valid:
-                if target in v and v not in final_list: final_list.append(v)
+        
+        for p in priority:
+            found = [m for m in valid if p in m]
+            for f in found:
+                if f not in final_list: final_list.append(f)
+        
+        for v in valid:
+            if v not in final_list: final_list.append(v)
+            
         return final_list if final_list else ["models/gemini-1.5-flash"]
-    except: return ["models/gemini-1.5-flash"]
+    except:
+        return ["models/gemini-1.5-flash"]
 
 def upload_to_gemini(path):
     mime_type, _ = mimetypes.guess_type(path)
@@ -55,33 +69,36 @@ def upload_to_gemini(path):
 
 # --- MAIN APP ---
 def main():
-    st.title("🎙️ AI Meeting Assistant Pro")
+    st.title("🛡️ Universal AI Studio (Fixed & Split)")
     
     with st.sidebar:
-        st.header("🛠️ KHO VŨ KHÍ")
-        # Radio button để tách biệt nhiệm vụ như bác yêu cầu
+        st.header("🎯 CHẾ ĐỘ HOẠT ĐỘNG")
         main_mode = st.radio("Mục tiêu chính:", ("📝 Gỡ băng chi tiết", "📊 Phân tích chuyên sâu"))
         
+        st.divider()
+        
         if main_mode == "📊 Phân tích chuyên sâu":
-            st.subheader("Tính năng:")
-            c1, c2 = st.columns(2)
-            with c1:
-                opt_summary = st.checkbox("📋 Tóm tắt", True)
-                opt_action = st.checkbox("✅ Hành động", True)
-            with c2:
-                opt_mindmap = st.checkbox("🧠 Mindmap", True)
-                opt_prosody = st.checkbox("🎭 Cảm xúc", False)
+            st.subheader("CHỌN VŨ KHÍ (TÁCH RIÊNG):")
+            opt_summary = st.checkbox("📋 Tóm tắt nội dung", True)
+            opt_action = st.checkbox("✅ Danh sách Hành động", True)
+            opt_process = st.checkbox("🔄 Trích xuất Quy trình", False)
+            opt_prosody = st.checkbox("🎭 Phân tích Cảm xúc", False)
+            opt_mindmap = st.checkbox("🧠 Vẽ Sơ đồ tư duy", True)
+            opt_quiz = st.checkbox("❓ Câu hỏi Trắc nghiệm", False)
+            opt_flash = st.checkbox("🎴 Thẻ ghi nhớ", False)
+            opt_slides = st.checkbox("🖥️ Dàn ý Slide", False)
         
         st.divider()
-        with st.expander("⚙️ Cấu hình & Key", expanded=False):
+        with st.expander("⚙️ Cấu hình & Key"):
             user_key = st.text_input("Nhập Key riêng:", type="password")
             if configure_genai(user_key):
+                st.success("Đã kết nối!")
                 models = get_optimized_models()
                 model_version = st.selectbox("Engine:", models, index=0)
                 detail_level = st.select_slider("Độ chi tiết:", ["Sơ lược", "Tiêu chuẩn", "Sâu"], value="Sâu")
+            else: st.error("Chưa kết nối!")
 
-        if st.button("🗑️ Reset App"):
-            st.session_state.clear(); st.rerun()
+        if st.button("🗑️ Reset App"): st.session_state.clear(); st.rerun()
 
     # --- TABS ---
     tab_work, tab_chat = st.tabs(["📂 Xử lý Dữ liệu", "💬 Chat"])
@@ -90,7 +107,10 @@ def main():
         up_files = st.file_uploader("Upload file", accept_multiple_files=True)
         audio_bytes = audio_recorder()
 
-        if st.button("🚀 BẮT ĐẦU", type="primary"):
+        if st.button("🚀 BẮT ĐẦU THỰC THI", type="primary"):
+            if not up_files and not audio_bytes:
+                st.warning("Chưa có file!"); return
+
             temp_paths = []
             if up_files:
                 for f in up_files:
@@ -101,61 +121,4 @@ def main():
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                     tmp.write(audio_bytes); temp_paths.append(tmp.name)
             
-            if temp_paths:
-                with st.spinner("AI đang xử lý..."):
-                    try:
-                        g_files = [upload_to_gemini(p) for p in temp_paths]
-                        st.session_state.gemini_files = g_files
-                        
-                        # Dùng cấu hình ổn định nhất của AI Studio
-                        gen_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.2)
-                        model = genai.GenerativeModel(model_version)
-
-                        if main_mode.startswith("📝"):
-                            prompt = "Hãy gỡ băng NGUYÊN VĂN 100% nội dung file này. Ghi rõ mốc thời gian [mm:ss] và định danh người nói là 'Diễn giả'. Viết Tiếng Việt."
-                        else:
-                            prompt = f"Phân tích chuyên sâu (Độ chi tiết: {detail_level}) các mục: Tóm tắt, Hành động, Mindmap, Cảm xúc. Trả lời Tiếng Việt."
-
-                        response = model.generate_content([prompt] + g_files, generation_config=gen_config)
-                        st.session_state.analysis_result = response.text
-                        st.success("✅ Đã hoàn thành.")
-                    except Exception as e:
-                        st.error(f"Lỗi: {e}")
-            else: st.warning("Chưa có file!")
-
-        if st.session_state.analysis_result:
-            res = st.session_state.analysis_result
-            sections = res.split("## ")
-            for s in sections:
-                if not s.strip(): continue
-                lines = s.split("\n")
-                with st.expander(f"📌 {lines[0].strip()}", expanded=True):
-                    st.markdown("\n".join(lines[1:]))
-
-            if main_mode.startswith("📝") and st.button("⏭️ Viết tiếp đoạn sau"):
-                with st.spinner("Đang nghe tiếp..."):
-                    try:
-                        # Khai báo trực tiếp để tránh lỗi UnboundLocalError
-                        model_cont = genai.GenerativeModel(model_version)
-                        c_prompt = f"Tiếp tục gỡ băng NGUYÊN VĂN đoạn sau của file này. Đoạn trước đã kết thúc ở: '{res[-200:]}'"
-                        c_res = model_cont.generate_content([c_prompt] + st.session_state.gemini_files, generation_config=genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.2))
-                        st.session_state.analysis_result += "\n\n(PHẦN TIẾP)\n\n" + c_res.text
-                        st.rerun()
-                    except Exception as e: st.error(f"Lỗi: {e}")
-
-    with tab_chat:
-        st.header("💬 Chat với file")
-        if st.session_state.gemini_files:
-            for m in st.session_state.chat_history:
-                with st.chat_message(m["role"]): st.markdown(m["content"])
-            if inp := st.chat_input("Hỏi AI..."):
-                st.session_state.chat_history.append({"role": "user", "content": inp})
-                with st.chat_message("user"): st.markdown(inp)
-                with st.chat_message("assistant"):
-                    m_chat = genai.GenerativeModel(model_version)
-                    r = m_chat.generate_content(st.session_state.gemini_files + [f"Dựa trên file, trả lời Tiếng Việt: {inp}"])
-                    st.markdown(r.text); st.session_state.chat_history.append({"role": "assistant", "content": r.text})
-        else: st.info("👈 Upload file trước.")
-
-if __name__ == "__main__":
-    main()
+            with st.spinner(f"Đang dùng {model_version} xử lý..."):
