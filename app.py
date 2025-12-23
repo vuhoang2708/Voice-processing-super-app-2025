@@ -11,7 +11,7 @@ import re
 import random
 
 # --- CẤU HÌNH TRANG ---
-st.set_page_config(page_title="Universal AI Studio", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Universal AI Studio (Final Stable)", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
     .stButton>button {width: 100%; border-radius: 8px; height: 3em; font-weight: bold; background: linear-gradient(to right, #c31432, #240b36); color: white;}
@@ -176,33 +176,3 @@ def main():
                     file_ext = os.path.splitext(up_file.name)[1]
                     if not file_ext: file_ext = ".txt"
                     with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
-                        tmp.write(up_file.getvalue())
-                        temp_paths.append(tmp.name)
-            if audio_bytes:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                    tmp.write(audio_bytes)
-                    temp_paths.append(tmp.name)
-            
-            if not temp_paths:
-                st.warning("Vui lòng chọn file!")
-            else:
-                with st.spinner(f"Đang xử lý {len(temp_paths)} file..."):
-                    try:
-                        gemini_files_objs = []
-                        for path in temp_paths:
-                            g_file = upload_to_gemini(path)
-                            gemini_files_objs.append(g_file)
-                            os.remove(path)
-                        
-                        st.session_state.gemini_files = gemini_files_objs
-                        
-                        # --- XÂY DỰNG PROMPT (DÙNG LIST ĐỂ TRÁNH LỖI SYNTAX) ---
-                        length_instruction = "Viết chi tiết, đầy đủ." if detail_level == "Chi tiết sâu" else "Viết ngắn gọn."
-                        
-                        base_prompt = f"""
-                        Bạn là chuyên gia phân tích. Nhiệm vụ: Xử lý file và tạo báo cáo Tiếng Việt.
-                        QUY TẮC:
-                        1. Bắt đầu mỗi mục bằng tiêu đề H2 (##) CHÍNH XÁC.
-                        2. KHÔNG dùng H2 cho nội dung con.
-                        3. KHÔNG trả về XML.
-                        4. {length_instruction}
