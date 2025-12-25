@@ -10,32 +10,42 @@ import mimetypes
 import re
 import random
 
-# --- CẤU HÌNH TRANG ---
-st.set_page_config(page_title="Universal AI Studio (Auto-Pilot)", page_icon="⚡", layout="wide")
+# --- 1. CẤU HÌNH TRANG ---
+st.set_page_config(page_title="Universal AI Studio", page_icon="🎙️", layout="wide")
 st.markdown("""
 <style>
     .stButton>button {width: 100%; border-radius: 8px; height: 3em; font-weight: bold; background: #1e3c72; color: white;}
     .stExpander {border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 10px; background-color: #ffffff;}
     .stMarkdown h2 {color: #1a2a6c; border-bottom: 2px solid #eee; padding-bottom: 5px;}
-    /* Style cho nút Dừng màu đỏ */
     div[data-testid="stButton"] > button:contains("DỪNG") {background-color: #d32f2f !important;}
 </style>
 """, unsafe_allow_html=True)
 
-# --- BIẾN TOÀN CỤC ---
+# --- 2. BIẾN TOÀN CỤC & SESSION ---
 STRICT_RULES = "CHỈ DÙNG FILE GỐC. CẤM BỊA TÊN DIỄN GIẢ. CẤM BỊA NỘI DUNG. TRÍCH DẪN GIỜ [mm:ss]."
 
-# --- QUẢN LÝ SESSION ---
 if "chat_history" not in st.session_state: st.session_state.chat_history = []
 if "gemini_files" not in st.session_state: st.session_state.gemini_files = [] 
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = ""
-# Biến kiểm soát chế độ tự động
 if "is_auto_running" not in st.session_state: st.session_state.is_auto_running = False
 if "loop_count" not in st.session_state: st.session_state.loop_count = 0
 
-# --- HÀM HỖ TRỢ ---
+# --- 3. CÁC HÀM HỖ TRỢ (HELPER FUNCTIONS) ---
 def configure_genai(user_key=None):
-    api_key = user_key or st.secrets.get("GOOGLE_API_KEY") or (random.choice(st.secrets["SYSTEM_KEYS"]) if "SYSTEM_KEYS" in st.secrets else None)
+    api_key = None
+    if user_key:
+        api_key = user_key
+    else:
+        try:
+            if "SYSTEM_KEYS" in st.secrets:
+                keys = st.secrets["SYSTEM_KEYS"]
+                if isinstance(keys, str): 
+                    keys = [k.strip() for k in keys.replace('[','').replace(']','').replace('"','').replace("'",'').split(',')]
+                api_key = random.choice(keys)
+            elif "GOOGLE_API_KEY" in st.secrets:
+                api_key = st.secrets["GOOGLE_API_KEY"]
+        except: pass
+    
     if not api_key: return False
     try:
         genai.configure(api_key=api_key)
@@ -46,6 +56,7 @@ def get_optimized_models():
     try:
         models = genai.list_models()
         valid = [m.name for m in models if 'generateContent' in m.supported_generation_methods and 'gemini' in m.name]
+        # Ưu tiên Flash 3.0 Preview
         priority = ["gemini-3-flash-preview", "gemini-2.0-flash-exp", "gemini-1.5-flash"]
         final_list = []
         for p in priority:
@@ -76,13 +87,14 @@ def create_docx(content):
         else: doc.add_paragraph(line)
     return doc
 
-# --- MAIN APP ---
+# --- 4. GIAO DIỆN CHÍNH (MAIN APP) ---
 def main():
-    st.title("🛡️ Universal AI Studio (Auto-Pilot)")
+    st.title("🚀 Universal AI Studio (Final Tuned)")
     
+    # --- SIDEBAR ---
     with st.sidebar:
         st.header("🎯 CHẾ ĐỘ HOẠT ĐỘNG")
-        main_mode = st.radio("Mục tiêu chính:", ("📝 Gỡ băng chi tiết", "📊 Phân tích chuyên sâu"))
+        main_mode = st.radio("Mục tiêu chính:", ("📝 Gỡ băng nguyên văn (Verbatim)", "📊 Phân tích chuyên sâu"))
         
         st.divider()
         
@@ -96,9 +108,8 @@ def main():
             opt_quiz = st.checkbox("❓ Câu hỏi Trắc nghiệm", False)
             opt_slides = st.checkbox("🖥️ Dàn ý Slide", False)
         else:
-            # Cấu hình cho chế độ Gỡ băng tự động
-            st.info("💡 Chế độ Auto-Pilot sẽ tự động chạy tiếp khi hết token.")
-            auto_continue = st.checkbox("Bật chế độ Tự động nối (Auto-Continue)", value=True)
+            st.info("💡 Chế độ Gỡ băng sẽ chép lại từng từ một. Nếu file dài, hệ thống sẽ tự động chạy nối tiếp nhiều lần.")
+            auto_continue = st.checkbox("Tự động nối đoạn (Auto-Continue)", value=True)
         
         st.divider()
         with st.expander("⚙️ Cấu hình & Key"):
@@ -107,7 +118,8 @@ def main():
                 st.success("Đã kết nối!")
                 models = get_optimized_models()
                 model_version = st.selectbox("Engine:", models, index=0)
-                detail_level = st.select_slider("Độ chi tiết:", ["Sơ lược", "Tiêu chuẩn", "Sâu"], value="Sâu")
+                if main_mode.startswith("📊"):
+                    detail_level = st.select_slider("Độ chi tiết:", ["Sơ lược", "Tiêu chuẩn", "Sâu"], value="Sâu")
             else: st.error("Chưa kết nối!")
 
         if st.button("🗑️ Reset App"):
@@ -117,7 +129,6 @@ def main():
     tab_work, tab_chat = st.tabs(["📂 Xử lý Dữ liệu", "💬 Chat"])
 
     with tab_work:
-        # Chỉ hiện nút Upload khi KHÔNG trong quá trình tự động chạy
         if not st.session_state.is_auto_running:
             up_files = st.file_uploader("Upload file", accept_multiple_files=True)
             audio_bytes = audio_recorder()
@@ -141,17 +152,31 @@ def main():
                             g_files = [upload_to_gemini(p) for p in temp_paths]
                             st.session_state.gemini_files = g_files
                             
-                            gen_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.3)
-
                             if main_mode.startswith("📝"):
-                                prompt = f"{STRICT_RULES}\nNHIỆM VỤ: Gỡ băng NGUYÊN VĂN 100%. Không tóm tắt. Định danh là 'Diễn giả'."
-                                # Kích hoạt cờ tự động nếu được chọn
+                                # CẤU HÌNH VÀNG: TEMP 0.2 ĐỂ TRÁNH LẶP, TOP_P 0.95 ĐỂ CHÍNH XÁC
+                                gen_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.2, top_p=0.95)
+                                prompt = """
+                                BẠN LÀ MỘT MÁY GỠ BĂNG CHUYÊN NGHIỆP.
+                                NHIỆM VỤ: Nghe và chép lại NGUYÊN VĂN (Verbatim) từng từ một trong file âm thanh.
+                                
+                                QUY TẮC BẮT BUỘC:
+                                1. KHÔNG ĐƯỢC TÓM TẮT. KHÔNG ĐƯỢC LƯỢC BỎ.
+                                2. Viết lại chính xác những gì nghe thấy.
+                                3. NẾU GẶP ĐOẠN LẶP LẠI HOẶC NHIỄU: Hãy bỏ qua, không được viết lặp từ vô nghĩa.
+                                4. Định dạng: [Phút:Giây] Nội dung...
+                                5. Nếu file quá dài, hãy viết đến khi hết giới hạn token thì dừng lại.
+                                6. Ngôn ngữ: Tiếng Việt.
+                                
+                                Tiêu đề bắt đầu: ## BẢN GỠ BĂNG CHI TIẾT (PHẦN 1)
+                                """
                                 if auto_continue:
                                     st.session_state.is_auto_running = True
                                     st.session_state.loop_count = 1
                             else:
-                                prompt = f"{STRICT_RULES}\nNHIỆM VỤ: Phân tích sâu {detail_level} cho các mục được chọn:\n"
-                                if opt_summary: prompt += "## 1. TÓM TẮT NỘI DUNG\n"
+                                # CẤU HÌNH CHO PHÂN TÍCH: TEMP 0.4 ĐỂ SÁNG TẠO HƠN
+                                gen_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.4)
+                                prompt = f"{STRICT_RULES}\nNHIỆM VỤ: Phân tích sâu {detail_level} cho các mục:\n"
+                                if opt_summary: prompt += "## 1. TÓM TẮT CHI TIẾT\n"
                                 if opt_action: prompt += "## 2. HÀNH ĐỘNG CẦN LÀM\n"
                                 if opt_process: prompt += "## 3. QUY TRÌNH CHI TIẾT\n"
                                 if opt_prosody: prompt += "## 4. PHÂN TÍCH CẢM XÚC\n"
@@ -162,23 +187,22 @@ def main():
                             model = genai.GenerativeModel(model_version)
                             response = model.generate_content([prompt] + g_files, generation_config=gen_config)
                             st.session_state.analysis_result = response.text
-                            st.rerun() # Refresh để hiện kết quả và bắt đầu đếm ngược
+                            st.rerun()
                         except Exception as e: st.error(f"Lỗi: {e}")
 
         # --- HIỂN THỊ KẾT QUẢ & LOGIC TỰ ĐỘNG ---
         if st.session_state.analysis_result:
-            # Nút Dừng khẩn cấp (Luôn hiện khi đang chạy tự động)
             if st.session_state.is_auto_running:
-                st.warning(f"🔄 Đang trong chế độ Tự động (Vòng lặp #{st.session_state.loop_count})")
+                st.warning(f"🔄 Đang tự động gỡ băng đoạn tiếp theo (Vòng lặp #{st.session_state.loop_count})...")
                 if st.button("🛑 DỪNG LẠI NGAY"):
                     st.session_state.is_auto_running = False
-                    st.success("Đã dừng quy trình tự động.")
+                    st.success("Đã dừng.")
                     st.rerun()
 
             st.divider()
             res = st.session_state.analysis_result
             
-            # Hiển thị nội dung
+            # Hiển thị
             sections = res.split("## ")
             for s in sections:
                 if not s.strip(): continue
@@ -194,47 +218,44 @@ def main():
                 st.download_button("📥 Tải Báo Cáo (.docx)", f, "Bao_Cao_AI.docx", type="primary")
             os.remove(doc_io.name)
 
-            # --- LOGIC AUTO-CONTINUE (ĐẾM NGƯỢC) ---
+            # --- LOGIC AUTO-CONTINUE (GỠ BĂNG) ---
             if st.session_state.is_auto_running and main_mode.startswith("📝"):
                 st.divider()
                 placeholder = st.empty()
-                
-                # Đếm ngược 5 giây
-                for i in range(5, 0, -1):
-                    placeholder.info(f"⏳ Tự động viết tiếp đoạn sau trong {i} giây... (Bấm 'DỪNG LẠI NGAY' ở trên nếu muốn dừng)")
+                for i in range(3, 0, -1):
+                    placeholder.info(f"⏳ Chuẩn bị nối đoạn tiếp theo trong {i} giây...")
                     time.sleep(1)
-                
                 placeholder.empty()
                 
-                # Thực thi viết tiếp
                 with st.spinner(f"🤖 AI đang nghe tiếp đoạn {st.session_state.loop_count + 1}..."):
                     try:
-                        cont_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.3)
+                        # Cấu hình Temp 0.2 cho gỡ băng nối tiếp
+                        cont_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.2, top_p=0.95)
                         model = genai.GenerativeModel(model_version)
-                        last_part = res[-500:] # Lấy 500 ký tự cuối làm mỏ neo
+                        last_part = res[-500:] 
                         
                         c_prompt = f"""
-                        {STRICT_RULES}
-                        CONTEXT: Bạn đang gỡ băng dở dang.
+                        CONTEXT: Bạn đang gỡ băng dở dang file âm thanh này.
                         MỎ NEO (Đoạn cuối cùng bạn vừa viết): "...{last_part}"
                         
-                        NHIỆM VỤ: 
+                        NHIỆM VỤ CẤP BÁCH:
                         1. Tìm vị trí của MỎ NEO trong file âm thanh.
-                        2. Bắt đầu gỡ băng NGUYÊN VĂN từ NGAY SAU mỏ neo đó.
-                        3. TUYỆT ĐỐI KHÔNG viết lại nội dung của Mỏ neo.
-                        4. Tiếp tục cho đến hết file hoặc hết giới hạn cho phép.
+                        2. Viết tiếp NGUYÊN VĂN (Verbatim) nội dung ngay sau Mỏ neo.
+                        3. TUYỆT ĐỐI KHÔNG viết lại Mỏ neo.
+                        4. TUYỆT ĐỐI KHÔNG tóm tắt. Viết càng chi tiết càng tốt.
+                        5. Nếu gặp đoạn lặp lại, hãy bỏ qua.
+                        6. Nếu hết file thì dừng lại.
                         """
                         
                         c_res = model.generate_content([c_prompt] + st.session_state.gemini_files, generation_config=cont_config)
                         
-                        # Kiểm tra nếu AI không trả về gì mới (đã hết file)
                         if len(c_res.text) < 50 or "kết thúc" in c_res.text.lower():
                             st.session_state.is_auto_running = False
                             st.success("✅ Đã gỡ băng xong toàn bộ file!")
                         else:
                             st.session_state.analysis_result += "\n\n" + c_res.text
                             st.session_state.loop_count += 1
-                            st.rerun() # Refresh để cập nhật nội dung và đếm ngược tiếp
+                            st.rerun()
                             
                     except Exception as e:
                         st.error(f"Lỗi hoặc đã hết file: {e}")
