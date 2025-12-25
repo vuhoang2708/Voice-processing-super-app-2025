@@ -219,3 +219,62 @@ def main():
                 os.remove(doc_io.name)
 
                 # AUTO-CONTINUE
+                if st.session_state.is_auto_running and main_mode.startswith("📝"):
+                    st.divider()
+                    placeholder = st.empty()
+                    for i in range(3, 0, -1):
+                        placeholder.info(f"⏳ Chạy tiếp trong {i}s...")
+                        time.sleep(1)
+                    placeholder.empty()
+                    
+                    with st.spinner("Đang nghe tiếp..."):
+                        try:
+                            cont_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.2)
+                            model = genai.GenerativeModel(model_version) # Dùng lại model đang chọn
+                            last_part = res[-500:]
+                            c_prompt = f"""
+                            CONTEXT: Đang gỡ băng dở dang.
+                            MỎ NEO: "...{last_part}"
+                            NHIỆM VỤ: Tìm mỏ neo, viết tiếp NGUYÊN VĂN đoạn sau. KHÔNG viết lại mỏ neo.
+                            """
+                            
+                            # Fallback cho đoạn nối tiếp
+                            try:
+                                c_res = model.generate_content([c_prompt] + st.session_state.gemini_files, generation_config=cont_config)
+                            except:
+                                model = genai.GenerativeModel("models/gemini-1.5-flash")
+                                c_res = model.generate_content([c_prompt] + st.session_state.gemini_files, generation_config=cont_config)
+
+                            if len(c_res.text) < 50 or "kết thúc" in c_res.text.lower():
+                                st.session_state.is_auto_running = False
+                                st.success("✅ Đã xong!")
+                            else:
+                                st.session_state.analysis_result += "\n\n" + c_res.text
+                                st.session_state.loop_count += 1
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Lỗi: {e}")
+                            st.session_state.is_auto_running = False
+
+        with tab_chat:
+            st.header("💬 Chat")
+            if st.session_state.gemini_files:
+                for m in st.session_state.chat_history:
+                    with st.chat_message(m["role"]): st.markdown(m["content"])
+                if inp := st.chat_input("Hỏi AI..."):
+                    st.session_state.chat_history.append({"role": "user", "content": inp})
+                    with st.chat_message("user"): st.markdown(inp)
+                    with st.chat_message("assistant"):
+                        try:
+                            m = genai.GenerativeModel(model_version)
+                            r = m.generate_content(st.session_state.gemini_files + [f"Trả lời: {inp}"])
+                            st.markdown(r.text); st.session_state.chat_history.append({"role": "assistant", "content": r.text})
+                        except: st.error("Lỗi chat.")
+            else: st.info("👈 Upload file trước.")
+
+    except Exception as e:
+        st.error(f"🔥 LỖI NGHIÊM TRỌNG (CRASH): {e}")
+        st.stop()
+
+if __name__ == "__main__":
+    main()
