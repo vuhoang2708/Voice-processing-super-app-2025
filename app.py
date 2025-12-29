@@ -352,3 +352,45 @@ def main():
                                     st.rerun()
                             else:
                                 st.session_state.analysis_result += "\n\n" + safe_c_text
+                                st.session_state.loop_count += 1
+                                st.rerun()
+                        except Exception as e:
+                            err_msg = str(e)
+                            if "429" in err_msg or "Quota" in err_msg:
+                                st.session_state.quota_error = True
+                                st.session_state.is_auto_running = False # Dừng auto để xử lý lỗi
+                                st.rerun()
+                            elif "404" in err_msg:
+                                # 404 thì tự fallback luôn
+                                try:
+                                    fb_model = genai.GenerativeModel("models/gemini-1.5-flash")
+                                    c_res = fb_model.generate_content([c_prompt] + st.session_state.gemini_files, generation_config=cont_config, safety_settings=safety_settings)
+                                    st.session_state.analysis_result += "\n\n" + get_safe_response(c_res)
+                                    st.session_state.loop_count += 1
+                                    st.rerun()
+                                except: st.error("Lỗi hệ thống."); st.session_state.is_auto_running = False
+                            else:
+                                st.error(f"Lỗi: {e}")
+                                st.session_state.is_auto_running = False
+
+    with tab_chat:
+        st.header("💬 Chat")
+        if st.session_state.gemini_files:
+            for m in st.session_state.chat_history:
+                with st.chat_message(m["role"]): st.markdown(m["content"])
+            if inp := st.chat_input("Hỏi AI..."):
+                st.session_state.chat_history.append({"role": "user", "content": inp})
+                with st.chat_message("user"): st.markdown(inp)
+                with st.chat_message("assistant"):
+                    try:
+                        m = genai.GenerativeModel(model_version)
+                        r = m.generate_content(
+                            st.session_state.gemini_files + [f"Trả lời: {inp}"],
+                            safety_settings=[{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}]
+                        )
+                        st.markdown(r.text); st.session_state.chat_history.append({"role": "assistant", "content": r.text})
+                    except: st.error("Lỗi chat.")
+        else: st.info("👈 Upload file trước.")
+
+if __name__ == "__main__":
+    main()
