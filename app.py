@@ -9,10 +9,9 @@ import time
 import mimetypes
 import re
 import random
-import shutil
 
-# --- 1. CẤU HÌNH TRANG ---
-st.set_page_config(page_title="Universal AI Studio (Pro)", page_icon="🛡️", layout="wide")
+# --- CẤU HÌNH TRANG ---
+st.set_page_config(page_title="Universal AI Studio (Polished)", page_icon="💎", layout="wide")
 st.markdown("""
 <style>
     .stButton>button {width: 100%; border-radius: 8px; height: 3em; font-weight: bold; background: #1e3c72; color: white;}
@@ -22,52 +21,19 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. BIẾN TOÀN CỤC & CẤU HÌNH ---
-STRICT_RULES = "CHỈ DÙNG FILE GỐC. CẤM BỊA TÊN DIỄN GIẢ. CẤM BỊA NỘI DUNG. TRÍCH DẪN GIỜ [mm:ss]."
-MAX_LOOPS = 20  # Giới hạn an toàn: khoảng 2 tiếng audio để tránh treo máy
+# --- BIẾN TOÀN CỤC ---
+STRICT_RULES = "CHỈ DÙNG FILE GỐC. CẤM BỊA TÊN DIỄN GIẢ. CẤM BỊA NỘI DUNG. BẮT BUỘC GHI MỐC THỜI GIAN [mm:ss] Ở ĐẦU MỖI ĐOẠN."
 
-# --- 3. QUẢN LÝ SESSION ---
+# --- QUẢN LÝ SESSION ---
 if "chat_history" not in st.session_state: st.session_state.chat_history = []
 if "gemini_files" not in st.session_state: st.session_state.gemini_files = [] 
-if "local_files" not in st.session_state: st.session_state.local_files = [] # Theo dõi file tạm
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = ""
 if "is_auto_running" not in st.session_state: st.session_state.is_auto_running = False
 if "loop_count" not in st.session_state: st.session_state.loop_count = 0
 
-# --- 4. HÀM HỖ TRỢ KỸ THUẬT ---
-
-def cleanup_resources():
-    """Dọn dẹp tài nguyên trên Cloud và Local để tiết kiệm bộ nhớ"""
-    # 1. Xóa file trên Google Cloud
-    if st.session_state.gemini_files:
-        for f in st.session_state.gemini_files:
-            try:
-                genai.delete_file(f.name)
-            except Exception: pass
-    
-    # 2. Xóa file tạm trên ổ cứng server
-    if st.session_state.local_files:
-        for p in st.session_state.local_files:
-            try:
-                if os.path.exists(p): os.remove(p)
-            except Exception: pass
-            
-    st.session_state.gemini_files = []
-    st.session_state.local_files = []
-
+# --- HÀM HỖ TRỢ ---
 def configure_genai(user_key=None):
-    api_key = user_key
-    if not api_key:
-        try:
-            if "SYSTEM_KEYS" in st.secrets:
-                keys = st.secrets["SYSTEM_KEYS"]
-                if isinstance(keys, str): 
-                    keys = [k.strip() for k in keys.replace('[','').replace(']','').replace('"','').replace("'",'').split(',')]
-                if keys: api_key = random.choice(keys)
-            elif "GOOGLE_API_KEY" in st.secrets:
-                api_key = st.secrets["GOOGLE_API_KEY"]
-        except: pass
-    
+    api_key = user_key or st.secrets.get("GOOGLE_API_KEY") or (random.choice(st.secrets["SYSTEM_KEYS"]) if "SYSTEM_KEYS" in st.secrets else None)
     if not api_key: return False
     try:
         genai.configure(api_key=api_key)
@@ -75,14 +41,23 @@ def configure_genai(user_key=None):
     except: return False
 
 def get_optimized_models():
-    # Danh sách cứng: Đã cập nhật theo chỉ đạo của bác
-    return [
-        "models/gemini-3.0-flash-preview", # Ưu tiên số 1: Model bác đang dùng ngon
-        "models/gemini-2.0-flash-exp",    # Bản Flash Next Gen (Experimental)
-        "models/gemini-1.5-pro",          # Bản Pro ổn định
-        "models/gemini-1.5-flash",        # Bản Backup tiết kiệm
-        "models/gemini-1.5-pro-002",      # Bản Pro cập nhật
-    ]
+    try:
+        models = genai.list_models()
+        valid = [m.name for m in models if 'generateContent' in m.supported_generation_methods and 'gemini' in m.name]
+        priority = ["gemini-3-flash-preview", "gemini-2.0-flash-exp", "gemini-1.5-flash"]
+        final_list = []
+        for p in priority:
+            found = [m for m in valid if p in m]
+            for f in found:
+                if f not in final_list: final_list.append(f)
+        for v in valid:
+            if v not in final_list: final_list.append(v)
+        return final_list if final_list else ["models/gemini-1.5-flash"]
+    except: return ["models/gemini-1.5-flash"]
+
+def format_model_name(name):
+    """Làm đẹp tên model cho dễ đọc"""
+    return name.replace("models/", "").replace("-preview", " (Pre)").replace("-latest", "").upper()
 
 def upload_to_gemini(path):
     mime_type, _ = mimetypes.guess_type(path)
@@ -92,274 +67,216 @@ def upload_to_gemini(path):
         file = genai.get_file(file.name)
     return file
 
-def get_smart_anchor(text, char_limit=1000):
-    """Lấy mỏ neo thông minh: Cắt đúng dấu chấm câu để AI không bị loạn"""
-    anchor = text[-char_limit:]
-    # Tìm dấu chấm câu (.!?) hoặc xuống dòng gần nhất
-    match = re.search(r'[.!?\n]', anchor)
-    if match:
-        return anchor[match.start()+1:].strip()
-    return anchor # Fallback nếu không tìm thấy
+def clean_text(text):
+    """Lọc bỏ các dòng rác, mỏ neo, suy nghĩ của AI"""
+    lines = text.split('\n')
+    cleaned = []
+    for line in lines:
+        l = line.strip()
+        # Bỏ dòng bắt đầu bằng ký tự lạ hoặc câu dẫn nhập
+        if not l: continue
+        if l.startswith(('*', 'Wait,', 'Refining', 'Final check', 'Constraint', 'Context:', 'MỎ NEO', 'NHIỆM VỤ', 'Dưới đây là', 'Tiếp theo là')):
+            continue
+        # Bỏ đoạn Hallucination tiếng Anh (nếu có)
+        if "Introduction" in l and "Shower" in l: continue 
+        cleaned.append(line)
+    return "\n".join(cleaned)
 
 def create_docx(content):
-    """Tạo file Word sạch, loại bỏ ký tự Markdown thừa"""
     doc = Document()
-    doc.add_heading('BÁO CÁO GỠ BĂNG (AI STUDIO)', 0)
-    
-    clean_content = content.replace("```markdown", "").replace("```", "")
-    
+    doc.add_heading('BÁO CÁO GỠ BĂNG', 0)
+    clean_content = clean_text(content)
     for line in clean_content.split('\n'):
-        # Loại bỏ các ký tự format Markdown cơ bản để văn bản Word đẹp hơn
-        clean_text = line.strip().replace('**', '').replace('__', '')
-        
-        if not clean_text: continue
-        
-        if line.startswith('# '): 
-            doc.add_heading(clean_text.replace('# ', ''), level=1)
-        elif line.startswith('## '): 
-            doc.add_heading(clean_text.replace('## ', ''), level=2)
-        elif line.startswith('### '): 
-            doc.add_heading(clean_text.replace('### ', ''), level=3)
-        elif line.startswith('- ') or line.startswith('* '):
-            doc.add_paragraph(clean_text[2:], style='List Bullet')
-        else:
-            doc.add_paragraph(clean_text)
+        if line.startswith('# '): doc.add_heading(line.replace('# ', ''), level=1)
+        elif line.startswith('## '): doc.add_heading(line.replace('## ', ''), level=2)
+        elif line.startswith('### '): doc.add_heading(line.replace('### ', ''), level=3)
+        else: doc.add_paragraph(line)
     return doc
 
-# --- 5. HÀM XỬ LÝ KẾT QUẢ AN TOÀN (ANTI-CRASH) ---
-def get_safe_response(response):
-    """Trích xuất text an toàn, xử lý triệt để lỗi bản quyền (Finish Reason 4)"""
-    try:
-        if not response.candidates:
-            return "\n\n[LỖI: Không có phản hồi từ AI (Candidates Empty)]"
-            
-        finish_reason = response.candidates[0].finish_reason
-        
-        # 1: STOP (Thành công), 2: MAX_TOKENS (Hết dung lượng)
-        if finish_reason in [1, 2]: 
-            return response.text
-        
-        # 3: SAFETY (Bộ lọc an toàn), 4: RECITATION (Bản quyền)
-        elif finish_reason == 3:
-            return "\n\n[CẢNH BÁO: Nội dung bị chặn do vi phạm quy tắc an toàn của Google.]"
-        elif finish_reason == 4:
-            return "\n\n[DỪNG: Phát hiện nội dung có bản quyền/âm nhạc. Google từ chối xử lý tiếp.]"
-        
-        else:
-            return f"\n\n[Lỗi không xác định: Finish Reason {finish_reason}]"
-            
-    except Exception as e:
-        try:
-            return response.text # Cố gắng lấy text lần cuối
-        except:
-            return f"\n\n[Lỗi xử lý phản hồi: {e}]"
-
-# --- 6. GIAO DIỆN CHÍNH (MAIN) ---
+# --- MAIN APP ---
 def main():
+    st.title("💎 Universal AI Studio (Polished)")
+    
     with st.sidebar:
-        st.header("🎯 CHẾ ĐỘ")
-        main_mode = st.radio("Mục tiêu:", ("📝 Gỡ băng nguyên văn", "📊 Phân tích chuyên sâu"))
+        st.header("🎯 CHẾ ĐỘ HOẠT ĐỘNG")
+        main_mode = st.radio("Mục tiêu chính:", ("📝 Gỡ băng nguyên văn", "📊 Phân tích chuyên sâu"))
         
         if main_mode == "📊 Phân tích chuyên sâu":
-            st.subheader("Tùy chọn output:")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.checkbox("📋 Tóm tắt", True)
-                st.checkbox("✅ Hành động", True)
-            with c2:
-                st.checkbox("🧠 Mindmap", True)
-                st.checkbox("❓ Quiz", False)
+            st.subheader("CHỌN VŨ KHÍ:")
+            opt_summary = st.checkbox("📋 Tóm tắt nội dung", True)
+            opt_action = st.checkbox("✅ Danh sách Hành động", True)
+            opt_process = st.checkbox("🔄 Trích xuất Quy trình", False)
+            opt_prosody = st.checkbox("🎭 Phân tích Cảm xúc", False)
+            opt_mindmap = st.checkbox("🧠 Vẽ Sơ đồ tư duy", True)
+            opt_quiz = st.checkbox("❓ Câu hỏi Trắc nghiệm", False)
+            opt_slides = st.checkbox("🖥️ Dàn ý Slide", False)
         else:
-            st.info("Chế độ Gỡ băng sẽ tự động chạy nối tiếp.")
-            auto_continue = st.checkbox("Tự động nối đoạn (Auto-Loop)", value=True)
+            st.info("💡 Chế độ Gỡ băng sẽ tự động chạy nối tiếp khi hết token.")
+            auto_continue = st.checkbox("Tự động nối đoạn (Auto-Continue)", value=True)
         
         st.divider()
         with st.expander("⚙️ Cấu hình & Key"):
-            user_key = st.text_input("Key riêng (nếu có):", type="password")
+            user_key = st.text_input("Nhập Key riêng:", type="password")
             if configure_genai(user_key):
-                st.success("Đã kết nối Gemini!")
+                st.success("Đã kết nối!")
                 models = get_optimized_models()
-                model_version = st.selectbox("Engine:", models, index=0)
+                # Dùng format_func để hiển thị tên đẹp
+                model_version = st.selectbox("Engine:", models, index=0, format_func=format_model_name)
+                if main_mode.startswith("📊"):
+                    detail_level = st.select_slider("Độ chi tiết:", ["Sơ lược", "Tiêu chuẩn", "Sâu"], value="Sâu")
             else: st.error("Chưa kết nối!")
 
-        if st.button("🗑️ RESET & DỌN DẸP"):
-            cleanup_resources()
-            st.session_state.clear()
-            st.rerun()
+        if st.button("🗑️ Reset App"):
+            st.session_state.clear(); st.rerun()
 
     # --- TABS ---
-    tab_work, tab_chat = st.tabs(["📂 Xử lý File", "💬 Chat với AI"])
+    tab_work, tab_chat = st.tabs(["📂 Xử lý Dữ liệu", "💬 Chat"])
 
     with tab_work:
         if not st.session_state.is_auto_running:
-            st.info("Hỗ trợ: Video, Âm thanh, PDF, Tài liệu. (Tự động xóa sau khi Reset)")
             up_files = st.file_uploader("Upload file", accept_multiple_files=True)
             audio_bytes = audio_recorder()
 
-            if st.button("🚀 BẮT ĐẦU XỬ LÝ", type="primary"):
-                # 1. Lưu file tạm (Local)
+            if st.button("🚀 BẮT ĐẦU THỰC THI", type="primary"):
                 temp_paths = []
                 if up_files:
                     for f in up_files:
                         ext = os.path.splitext(f.name)[1] or ".txt"
                         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-                            tmp.write(f.getvalue())
-                            temp_paths.append(tmp.name)
+                            tmp.write(f.getvalue()); temp_paths.append(tmp.name)
                 if audio_bytes:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                        tmp.write(audio_bytes)
-                        temp_paths.append(tmp.name)
+                        tmp.write(audio_bytes); temp_paths.append(tmp.name)
                 
-                # Lưu đường dẫn local để xóa sau này
-                st.session_state.local_files.extend(temp_paths)
-
                 if not temp_paths:
-                    st.warning("Vui lòng chọn file hoặc ghi âm!")
+                    st.warning("Chưa có file!")
                 else:
-                    with st.spinner(f"Đang tải lên Gemini ({model_version})..."):
+                    with st.spinner(f"Đang xử lý..."):
                         try:
-                            # 2. Upload lên Gemini Cloud
                             g_files = [upload_to_gemini(p) for p in temp_paths]
                             st.session_state.gemini_files = g_files
                             
-                            # Tắt bộ lọc an toàn để tránh lỗi false positive
-                            safety_settings = [
-                                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-                            ]
-                            
-                            gen_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.2)
-
-                            # 3. Tạo Prompt ban đầu
                             if main_mode.startswith("📝"):
+                                # Temp 0.1 để chính xác, nhưng Prompt phải có ví dụ Timecode
+                                gen_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.1)
                                 prompt = f"""
                                 {STRICT_RULES}
                                 NHIỆM VỤ: Gỡ băng NGUYÊN VĂN 100%.
-                                YÊU CẦU:
-                                1. Bắt đầu mỗi câu bằng [Phút:Giây].
-                                2. Viết lại chính xác từng từ, kể cả từ đệm.
-                                3. Định danh: 'Diễn giả 1', 'Diễn giả 2' (Không đoán tên thật).
+                                YÊU CẦU BẮT BUỘC:
+                                1. Bắt đầu mỗi câu nói bằng mốc thời gian [Phút:Giây]. Ví dụ: [00:15] Xin chào mọi người...
+                                2. Không tóm tắt. Viết hết mọi từ ngữ, kể cả từ đệm.
+                                3. Định danh: 'Diễn giả' hoặc 'Người nói'.
+                                4. Ngôn ngữ: Tiếng Việt.
                                 """
                                 if auto_continue:
                                     st.session_state.is_auto_running = True
                                     st.session_state.loop_count = 1
                             else:
-                                prompt = f"{STRICT_RULES}\nNHIỆM VỤ: Phân tích sâu nội dung.\nOUTPUT FORMAT:\n## TÓM TẮT\n## HÀNH ĐỘNG\n## MINDMAP (Mermaid code)\n## QUIZ"
+                                gen_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.4)
+                                prompt = f"{STRICT_RULES}\nNHIỆM VỤ: Phân tích sâu {detail_level} cho các mục:\n"
+                                if opt_summary: prompt += "## 1. TÓM TẮT CHI TIẾT\n"
+                                if opt_action: prompt += "## 2. HÀNH ĐỘNG CẦN LÀM\n"
+                                if opt_process: prompt += "## 3. QUY TRÌNH CHI TIẾT\n"
+                                if opt_prosody: prompt += "## 4. PHÂN TÍCH CẢM XÚC\n"
+                                if opt_mindmap: prompt += "## 5. MÃ SƠ ĐỒ TƯ DUY (Mermaid)\n"
+                                if opt_quiz: prompt += "## 6. CÂU HỎI TRẮC NGHIỆM\n"
+                                if opt_slides: prompt += "## 7. DÀN Ý SLIDE\n"
 
-                            # 4. Gọi AI
                             model = genai.GenerativeModel(model_version)
-                            response = model.generate_content(
-                                [prompt] + g_files, 
-                                generation_config=gen_config,
-                                safety_settings=safety_settings
-                            )
-                            
-                            safe_text = get_safe_response(response)
-                            st.session_state.analysis_result = safe_text
+                            response = model.generate_content([prompt] + g_files, generation_config=gen_config)
+                            st.session_state.analysis_result = response.text
                             st.rerun()
-                        except Exception as e: st.error(f"Lỗi khởi tạo: {e}")
+                        except Exception as e: st.error(f"Lỗi: {e}")
 
-        # HIỂN THỊ KẾT QUẢ
+        # --- HIỂN THỊ KẾT QUẢ ---
         if st.session_state.analysis_result:
-            # Logic dừng nếu đang auto-run
             if st.session_state.is_auto_running:
-                st.warning(f"🔄 Đang tự động nối đoạn (Vòng {st.session_state.loop_count}/{MAX_LOOPS})...")
-                if st.button("🛑 DỪNG NGAY"):
+                st.warning(f"🔄 Đang tự động gỡ băng đoạn tiếp theo (Vòng lặp #{st.session_state.loop_count})...")
+                if st.button("🛑 DỪNG LẠI NGAY"):
                     st.session_state.is_auto_running = False
-                    st.success("Đã dừng thủ công.")
+                    st.success("Đã dừng.")
                     st.rerun()
 
             st.divider()
             res = st.session_state.analysis_result
             
-            # Render Mermaid nếu có
-            if "```mermaid" in res:
-                try:
-                    m_code = res.split("```mermaid")[1].split("```")[0]
-                    st_mermaid(m_code, height=500)
-                except: pass
+            # LÀM SẠCH VĂN BẢN TRƯỚC KHI HIỆN
+            clean_res = clean_text(res)
             
-            # Hiển thị Text trong Expander
-            with st.expander("📄 Nội dung chi tiết", expanded=True):
-                st.markdown(res)
-
-            # Nút tải Word
+            # Hiển thị
+            sections = clean_res.split("## ")
+            for s in sections:
+                if not s.strip(): continue
+                lines = s.split("\n")
+                with st.expander(f"📌 {lines[0].strip()}", expanded=True):
+                    st.markdown("\n".join(lines[1:]))
+            
+            # Download
             doc = create_docx(res)
             doc_io = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
             doc.save(doc_io.name)
             with open(doc_io.name, "rb") as f:
-                st.download_button("📥 Tải Báo Cáo (.docx)", f, "Bao_Cao_AI_Studio.docx", type="primary")
+                st.download_button("📥 Tải Báo Cáo (.docx)", f, "Bao_Cao_AI.docx", type="primary")
             os.remove(doc_io.name)
 
-            # LOGIC AUTO-CONTINUE (LOOP)
+            # --- LOGIC AUTO-CONTINUE ---
             if st.session_state.is_auto_running and main_mode.startswith("📝"):
-                # 1. Kiểm tra điều kiện dừng (Lỗi hoặc Max Loops)
-                if "[DỪNG:" in res or "[CẢNH BÁO:" in res:
-                    st.session_state.is_auto_running = False
-                    st.error("⚠️ Dừng do vấn đề bản quyền/an toàn.")
-                elif st.session_state.loop_count >= MAX_LOOPS:
-                    st.session_state.is_auto_running = False
-                    st.warning(f"🛑 Đã đạt giới hạn {MAX_LOOPS} vòng lặp. Dừng để bảo vệ Quota.")
-                else:
-                    # 2. Chờ 2s để UI cập nhật
-                    time.sleep(2)
-                    
-                    with st.spinner("Đang nghe tiếp đoạn sau..."):
-                        try:
-                            # 3. Lấy mỏ neo thông minh
-                            last_part = get_smart_anchor(res)
-                            
-                            c_prompt = f"""
-                            CONTEXT: Đang gỡ băng dở dang.
-                            MỎ NEO (Đoạn cuối đã chép): "...{last_part}"
-                            NHIỆM VỤ: Tìm vị trí mỏ neo trong file, chép tiếp NGUYÊN VĂN đoạn ngay sau đó. 
-                            TUYỆT ĐỐI KHÔNG viết lại đoạn mỏ neo.
-                            """
-                            
-                            model = genai.GenerativeModel(model_version)
-                            # Sử dụng config cũ
-                            c_res = model.generate_content(
-                                [c_prompt] + st.session_state.gemini_files, 
-                                generation_config=genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.2),
-                                safety_settings=[{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}] # Rút gọn
-                            )
-                            
-                            safe_c_text = get_safe_response(c_res)
-
-                            # 4. Kiểm tra kết quả nối
-                            if len(safe_c_text) < 50 or "kết thúc" in safe_c_text.lower() or "[DỪNG:" in safe_c_text:
-                                st.session_state.is_auto_running = False
-                                st.success("✅ Đã hoàn tất (hoặc không còn nội dung)!")
-                                if len(safe_c_text) > 5:
-                                    st.session_state.analysis_result += "\n\n" + safe_c_text
-                                    st.rerun()
-                            else:
-                                st.session_state.analysis_result += "\n\n" + safe_c_text
-                                st.session_state.loop_count += 1
-                                st.rerun()
-                        except Exception as e:
-                            st.error(f"Lỗi vòng lặp: {e}")
+                st.divider()
+                placeholder = st.empty()
+                for i in range(3, 0, -1):
+                    placeholder.info(f"⏳ Chuẩn bị nối đoạn tiếp theo trong {i} giây...")
+                    time.sleep(1)
+                placeholder.empty()
+                
+                with st.spinner(f"🤖 AI đang nghe tiếp đoạn {st.session_state.loop_count + 1}..."):
+                    try:
+                        cont_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.1)
+                        model = genai.GenerativeModel(model_version)
+                        last_part = clean_res[-500:] # Lấy đoạn sạch để làm mỏ neo
+                        
+                        c_prompt = f"""
+                        CONTEXT: Bạn đang gỡ băng dở dang file âm thanh này.
+                        MỎ NEO (Đoạn cuối cùng bạn vừa viết): "...{last_part}"
+                        
+                        NHIỆM VỤ CẤP BÁCH:
+                        1. Tìm vị trí của MỎ NEO trong file âm thanh.
+                        2. Viết tiếp NGUYÊN VĂN (Verbatim) nội dung ngay sau Mỏ neo.
+                        3. BẮT BUỘC ghi mốc thời gian [Phút:Giây] ở đầu mỗi đoạn.
+                        4. TUYỆT ĐỐI KHÔNG viết lại Mỏ neo.
+                        5. CHỈ TRẢ VỀ NỘI DUNG GỠ BĂNG.
+                        """
+                        
+                        c_res = model.generate_content([c_prompt] + st.session_state.gemini_files, generation_config=cont_config)
+                        
+                        if len(c_res.text) < 50 or "kết thúc" in c_res.text.lower():
                             st.session_state.is_auto_running = False
+                            st.success("✅ Đã gỡ băng xong toàn bộ file!")
+                        else:
+                            st.session_state.analysis_result += "\n\n" + c_res.text
+                            st.session_state.loop_count += 1
+                            st.rerun()
+                            
+                    except Exception as e:
+                        st.error(f"Lỗi hoặc đã hết file: {e}")
+                        st.session_state.is_auto_running = False
 
     with tab_chat:
-        st.header("💬 Chat với dữ liệu")
+        st.header("💬 Chat")
         if st.session_state.gemini_files:
             for m in st.session_state.chat_history:
                 with st.chat_message(m["role"]): st.markdown(m["content"])
-            if inp := st.chat_input("Hỏi AI về nội dung file..."):
+            if inp := st.chat_input("Hỏi AI..."):
                 st.session_state.chat_history.append({"role": "user", "content": inp})
                 with st.chat_message("user"): st.markdown(inp)
                 with st.chat_message("assistant"):
                     try:
-                        m = genai.GenerativeModel(model_version)
-                        r = m.generate_content(
-                            st.session_state.gemini_files + [f"Trả lời dựa trên file: {inp}"]
-                        )
+                        m_chat = genai.GenerativeModel(model_version)
+                        r = m_chat.generate_content(st.session_state.gemini_files + [f"Trả lời từ file: {inp}"])
                         st.markdown(r.text); st.session_state.chat_history.append({"role": "assistant", "content": r.text})
-                    except: st.error("Lỗi chat.")
-        else: st.info("👈 Vui lòng Upload file ở tab bên cạnh trước.")
+                    except Exception as e:
+                        if "429" in str(e): st.error("Hết Quota! Vui lòng nhập Key ở Tab bên cạnh.")
+                        else: st.error(f"Lỗi: {e}")
+        else: st.info("👈 Upload file trước.")
 
 if __name__ == "__main__":
     main()
