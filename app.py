@@ -76,7 +76,7 @@ def configure_genai(user_key=None):
 
 def get_optimized_models():
     # Danh sách cứng ưu tiên các model ổn định nhất
-    return ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-2.0-flash-exp"]
+    return ["models/gemini-3-flash- preview", "models/gemini-1.5-pro", "models/gemini-flash-latest"]
 
 def upload_to_gemini(path):
     mime_type, _ = mimetypes.guess_type(path)
