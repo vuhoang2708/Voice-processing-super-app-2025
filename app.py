@@ -11,7 +11,7 @@ import re
 import random
 
 # --- 1. CẤU HÌNH TRANG ---
-st.set_page_config(page_title="Universal AI Studio (Robust)", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="Universal AI Studio (Ultimate)", page_icon="💎", layout="wide")
 st.markdown("""
 <style>
     .stButton>button {width: 100%; border-radius: 8px; height: 3em; font-weight: bold; background: #1e3c72; color: white;}
@@ -30,6 +30,7 @@ if "gemini_files" not in st.session_state: st.session_state.gemini_files = []
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = ""
 if "is_auto_running" not in st.session_state: st.session_state.is_auto_running = False
 if "loop_count" not in st.session_state: st.session_state.loop_count = 0
+# Biến phục vụ Retry
 if "quota_error" not in st.session_state: st.session_state.quota_error = False
 if "last_prompt" not in st.session_state: st.session_state.last_prompt = ""
 if "last_config" not in st.session_state: st.session_state.last_config = None
@@ -91,7 +92,7 @@ def get_safe_response(response):
 
 # --- 5. MAIN APP ---
 def main():
-    st.title("🛡️ Universal AI Studio (Robust)")
+    st.title("💎 Universal AI Studio (Ultimate)")
     
     # --- SIDEBAR ---
     with st.sidebar:
@@ -99,26 +100,35 @@ def main():
         main_mode = st.radio("Mục tiêu:", ("📝 Gỡ băng nguyên văn", "📊 Phân tích chuyên sâu"))
         
         if main_mode == "📊 Phân tích chuyên sâu":
-            st.subheader("Vũ khí:")
-            c1, c2 = st.columns(2)
-            with c1:
-                opt_summary = st.checkbox("📋 Tóm tắt", True)
-                opt_action = st.checkbox("✅ Hành động", True)
-                opt_process = st.checkbox("🔄 Quy trình", False)
-            with c2:
-                opt_prosody = st.checkbox("🎭 Cảm xúc", False)
-                opt_mindmap = st.checkbox("🧠 Mindmap", True)
-                opt_quiz = st.checkbox("❓ Quiz", False)
-        else:
-            st.info("Chế độ Gỡ băng sẽ chạy nối tiếp tự động.")
-            auto_continue = st.checkbox("Tự động nối đoạn", value=True)
+            st.subheader("KHO VŨ KHÍ (FULL):")
+            
+            st.markdown("**1. Cốt lõi**")
+            opt_summary = st.checkbox("📋 Tóm tắt & Hành động", True)
+            opt_process = st.checkbox("🔄 Trích xuất Quy trình", False)
+            opt_prosody = st.checkbox("🎭 Phân tích Cảm xúc", False)
+            opt_gossip = st.checkbox("☕ Chế độ 'Bà tám'", False)
+
+            st.markdown("**2. Sáng tạo Nghe/Nhìn**")
+            opt_podcast = st.checkbox("🎙️ Kịch bản Podcast", False)
+            opt_video = st.checkbox("🎬 Kịch bản Video", False)
+            opt_mindmap = st.checkbox("🧠 Sơ đồ tư duy (Mindmap)", True)
+
+            st.markdown("**3. Học tập & Nghiên cứu**")
+            opt_report = st.checkbox("📑 Báo cáo chuyên sâu", False)
+            opt_briefing = st.checkbox("📄 Briefing Doc (Tóm lược)", False)
+            opt_timeline = st.checkbox("⏳ Timeline (Dòng thời gian)", False)
+            opt_faq = st.checkbox("❓ FAQ (Hỏi đáp)", False)
+            opt_quiz = st.checkbox("📝 Quiz & Thẻ nhớ", False)
+            
+            st.markdown("**4. Dữ liệu**")
+            opt_slides = st.checkbox("🖥️ Dàn ý Slide", False)
+            opt_table = st.checkbox("📉 Bảng số liệu", False)
         
         st.divider()
         
-        # CẤU HÌNH LUÔN HIỆN ĐỂ BÁC CHỌN MODEL
         with st.expander("⚙️ Cấu hình & Key", expanded=True):
-            user_key = st.text_input("Key riêng (Tùy chọn):", type="password")
-            if configure_genai(user_key):
+            initial_key = st.text_input("Key riêng (Tùy chọn):", type="password")
+            if configure_genai(initial_key):
                 st.success("Đã kết nối!")
                 models = get_optimized_models()
                 model_version = st.selectbox("Engine:", models, index=0, format_func=format_model_name)
@@ -129,34 +139,35 @@ def main():
         if st.button("🗑️ Reset"):
             st.session_state.clear(); st.rerun()
 
-    # --- XỬ LÝ LỖI QUOTA (HIỆN LÊN ĐẦU) ---
+    # --- XỬ LÝ LỖI QUOTA (INTERACTIVE) ---
     if st.session_state.quota_error:
         st.markdown("""
         <div class="error-box">
-            <h3>⚠️ HẾT HẠN MỨC (QUOTA EXCEEDED)</h3>
-            <p>Model 3.0/2.0 đang bị Google giới hạn. Bạn muốn làm gì?</p>
+            <h3>⚠️ HẾT HẠN MỨC (429 QUOTA EXCEEDED)</h3>
+            <p>Model bạn chọn đã hết lượt dùng miễn phí. Bạn muốn xử lý sao?</p>
         </div>
         """, unsafe_allow_html=True)
         
         c1, c2 = st.columns(2)
         with c1:
-            rescue_key = st.text_input("🔑 Nhập Key khác để cứu:", type="password", key="rescue")
+            rescue_key = st.text_input("🔑 Nhập API Key MỚI để tiếp tục:", type="password", key="rescue")
             if st.button("🚀 Thử lại với Key này"):
                 if configure_genai(rescue_key):
                     st.session_state.quota_error = False
-                    st.rerun() # Chạy lại logic
+                    st.rerun() # Chạy lại với key mới
         with c2:
             st.write("Hoặc:")
-            if st.button("⬇️ Dùng 1.5 Flash (Miễn phí, Ổn định)"):
+            if st.button("⬇️ Hạ xuống 1.5 Flash (Miễn phí)"):
                 st.session_state.quota_error = False
-                # Ép dùng 1.5 Flash và chạy lại hàm xử lý
                 with st.spinner("Đang chuyển sang 1.5 Flash..."):
                     try:
+                        # Hạ cấp model
                         model = genai.GenerativeModel("models/gemini-1.5-flash")
                         response = model.generate_content([st.session_state.last_prompt] + st.session_state.gemini_files, generation_config=st.session_state.last_config)
                         st.session_state.analysis_result = get_safe_response(response)
                         st.rerun()
                     except Exception as e: st.error(f"Lỗi: {e}")
+        st.divider()
 
     # --- TABS ---
     tab_work, tab_chat = st.tabs(["📂 Xử lý", "💬 Chat"])
@@ -202,14 +213,29 @@ def main():
                                 YÊU CẦU:
                                 1. Bắt đầu mỗi câu bằng [Phút:Giây].
                                 2. Viết lại chính xác từng từ.
-                                3. Định danh: 'Diễn giả'.
+                                3. Định danh: 'Người nói 1', 'Người nói 2'.
                                 4. Ngôn ngữ: Tiếng Việt.
                                 """
-                                if auto_continue:
-                                    st.session_state.is_auto_running = True
-                                    st.session_state.loop_count = 1
+                                # MẶC ĐỊNH BẬT AUTO CONTINUE
+                                st.session_state.is_auto_running = True
+                                st.session_state.loop_count = 1
                             else:
-                                prompt = f"{STRICT_RULES}\nNHIỆM VỤ: Phân tích sâu:\n## TÓM TẮT\n## HÀNH ĐỘNG\n## QUY TRÌNH\n## CẢM XÚC\n## MÃ SƠ ĐỒ (Mermaid)\n## QUIZ"
+                                # TỔNG HỢP PROMPT FULL TÍNH NĂNG
+                                prompt = f"{STRICT_RULES}\nNHIỆM VỤ: Phân tích sâu {detail_level} cho các mục sau:\n"
+                                if opt_summary: prompt += "## TÓM TẮT & HÀNH ĐỘNG\n"
+                                if opt_process: prompt += "## QUY TRÌNH CHI TIẾT\n"
+                                if opt_prosody: prompt += "## PHÂN TÍCH CẢM XÚC\n"
+                                if opt_gossip: prompt += "## GÓC BÀ TÁM\n"
+                                if opt_podcast: prompt += "## KỊCH BẢN PODCAST\n"
+                                if opt_video: prompt += "## KỊCH BẢN VIDEO\n"
+                                if opt_mindmap: prompt += "## MÃ SƠ ĐỒ TƯ DUY (Mermaid)\n"
+                                if opt_report: prompt += "## BÁO CÁO CHUYÊN SÂU\n"
+                                if opt_briefing: prompt += "## BRIEFING DOC\n"
+                                if opt_timeline: prompt += "## TIMELINE SỰ KIỆN\n"
+                                if opt_faq: prompt += "## CÂU HỎI THƯỜNG GẶP (FAQ)\n"
+                                if opt_quiz: prompt += "## TRẮC NGHIỆM & THẺ NHỚ\n"
+                                if opt_slides: prompt += "## DÀN Ý SLIDE\n"
+                                if opt_table: prompt += "## BẢNG SỐ LIỆU\n"
 
                             # LƯU TRẠNG THÁI ĐỂ RETRY
                             st.session_state.last_prompt = prompt
@@ -231,11 +257,10 @@ def main():
                                 st.session_state.quota_error = True
                                 st.rerun()
                             elif "404" in err_msg or "Not Found" in err_msg:
-                                st.toast(f"⚠️ Model {format_model_name(model_version)} lỗi (404). Tự động chuyển sang mô hình thấp hơn...", icon="🔄")
-                                # TỰ ĐỘNG HẠ CẤP NẾU 404
+                                st.toast(f"⚠️ Model {format_model_name(model_version)} lỗi (404). Tự động chuyển sang 1.5 Flash...", icon="🔄")
                                 try:
-                                    fallback_model = genai.GenerativeModel("models/gemini-flash-latest")
-                                    response = fallback_model.generate_content([prompt] + g_files, generation_config=gen_config, safety_settings=safety_settings)
+                                    fb_model = genai.GenerativeModel("models/gemini-1.5-flash")
+                                    response = fb_model.generate_content([prompt] + g_files, generation_config=gen_config, safety_settings=safety_settings)
                                     st.session_state.analysis_result = get_safe_response(response)
                                     st.rerun()
                                 except Exception as e2: st.error(f"Lỗi hệ thống: {e2}")
@@ -253,12 +278,14 @@ def main():
             st.divider()
             res = st.session_state.analysis_result
             
+            # Xử lý Mindmap
             if "```mermaid" in res:
                 try:
                     m_code = res.split("```mermaid")[1].split("```")[0]
                     st_mermaid(m_code, height=500)
                 except: pass
             
+            # Hiển thị Text
             sections = res.split("## ")
             for s in sections:
                 if not s.strip(): continue
@@ -266,6 +293,7 @@ def main():
                 with st.expander(f"📌 {lines[0].strip()}", expanded=True):
                     st.markdown("\n".join(lines[1:]))
 
+            # Download
             doc = create_docx(res)
             doc_io = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
             doc.save(doc_io.name)
@@ -273,7 +301,7 @@ def main():
                 st.download_button("📥 Tải Báo Cáo", f, "Bao_Cao.docx", type="primary")
             os.remove(doc_io.name)
 
-            # AUTO-CONTINUE
+            # AUTO-CONTINUE (Logic cũ + Retry Quota)
             if st.session_state.is_auto_running and main_mode.startswith("📝"):
                 if "[DỪNG:" in res or "[CẢNH BÁO:" in res:
                     st.session_state.is_auto_running = False
@@ -303,6 +331,10 @@ def main():
                                 {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
                                 {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
                             ]
+                            
+                            # Lưu trạng thái cho Retry
+                            st.session_state.last_prompt = c_prompt
+                            st.session_state.last_config = cont_config
 
                             c_res = model.generate_content(
                                 [c_prompt] + st.session_state.gemini_files, 
@@ -320,48 +352,3 @@ def main():
                                     st.rerun()
                             else:
                                 st.session_state.analysis_result += "\n\n" + safe_c_text
-                                st.session_state.loop_count += 1
-                                st.rerun()
-                        except Exception as e:
-                            # Xử lý lỗi trong vòng lặp
-                            err_msg = str(e)
-                            if "429" in err_msg:
-                                st.session_state.quota_error = True
-                                st.session_state.is_auto_running = False # Dừng auto để nhập key
-                                st.rerun()
-                            elif "404" in err_msg:
-                                # Nếu đang chạy auto mà 404 thì thử fallback luôn
-                                try:
-                                    fb_model = genai.GenerativeModel("models/gemini-1.5-flash")
-                                    c_res = fb_model.generate_content([c_prompt] + st.session_state.gemini_files, generation_config=cont_config, safety_settings=safety_settings)
-                                    st.session_state.analysis_result += "\n\n" + get_safe_response(c_res)
-                                    st.session_state.loop_count += 1
-                                    st.rerun()
-                                except: 
-                                    st.error("Lỗi hệ thống.")
-                                    st.session_state.is_auto_running = False
-                            else:
-                                st.error(f"Lỗi: {e}")
-                                st.session_state.is_auto_running = False
-
-    with tab_chat:
-        st.header("💬 Chat")
-        if st.session_state.gemini_files:
-            for m in st.session_state.chat_history:
-                with st.chat_message(m["role"]): st.markdown(m["content"])
-            if inp := st.chat_input("Hỏi AI..."):
-                st.session_state.chat_history.append({"role": "user", "content": inp})
-                with st.chat_message("user"): st.markdown(inp)
-                with st.chat_message("assistant"):
-                    try:
-                        m = genai.GenerativeModel(model_version)
-                        r = m.generate_content(
-                            st.session_state.gemini_files + [f"Trả lời: {inp}"],
-                            safety_settings=[{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}]
-                        )
-                        st.markdown(r.text); st.session_state.chat_history.append({"role": "assistant", "content": r.text})
-                    except: st.error("Lỗi chat.")
-        else: st.info("👈 Upload file trước.")
-
-if __name__ == "__main__":
-    main()
