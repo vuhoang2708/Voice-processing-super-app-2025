@@ -75,9 +75,10 @@ def configure_genai(user_key=None):
     except: return False
 
 def get_optimized_models():
-    # Danh sách cứng: Ưu tiên Model mới nhất theo yêu cầu của bác
+    # Danh sách cứng: Đã cập nhật theo chỉ đạo của bác
     return [
-        "models/gemini-2.0-flash-exp",    # Bản Flash mạnh nhất hiện tại (thường được gọi là Next Gen)
+        "models/gemini-3.0-flash-preview", # Ưu tiên số 1: Model bác đang dùng ngon
+        "models/gemini-2.0-flash-exp",    # Bản Flash Next Gen (Experimental)
         "models/gemini-1.5-pro",          # Bản Pro ổn định
         "models/gemini-1.5-flash",        # Bản Backup tiết kiệm
         "models/gemini-1.5-pro-002",      # Bản Pro cập nhật
