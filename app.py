@@ -7,10 +7,11 @@ import tempfile
 import os
 import time
 import mimetypes
+import re
 import random
 
 # --- 1. CẤU HÌNH TRANG ---
-st.set_page_config(page_title="Universal AI Studio (Pro UI)", page_icon="💎", layout="wide")
+st.set_page_config(page_title="Universal AI Studio (Time-Sync)", page_icon="⏱️", layout="wide")
 st.markdown("""
 <style>
     .stButton>button {width: 100%; border-radius: 8px; height: 3em; font-weight: bold; background: #1e3c72; color: white;}
@@ -21,7 +22,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. BIẾN TOÀN CỤC ---
-STRICT_RULES = "CHỈ DÙNG FILE GỐC. CẤM BỊA TÊN DIỄN GIẢ. CẤM BỊA NỘI DUNG. TRÍCH DẪN GIỜ [mm:ss]."
+STRICT_RULES = "CHỈ DÙNG FILE GỐC. CẤM BỊA TÊN DIỄN GIẢ. CẤM BỊA NỘI DUNG. BẮT BUỘC GHI MỐC THỜI GIAN [mm:ss] Ở ĐẦU MỖI ĐOẠN."
 
 # --- 3. QUẢN LÝ SESSION ---
 if "chat_history" not in st.session_state: st.session_state.chat_history = []
@@ -50,27 +51,9 @@ def configure_genai(user_key=None):
         return True
     except: return False
 
-# --- ĐOẠN CODE BÁC YÊU CẦU GIỮ LẠI ---
 def get_optimized_models():
-    try:
-        models = genai.list_models()
-        valid = [m.name for m in models if 'generateContent' in m.supported_generation_methods and 'gemini' in m.name]
-        # Ưu tiên theo thứ tự bác muốn
-        priority = ["gemini-3-flash-preview", "gemini-2.0-flash-exp", "gemini-1.5-flash"]
-        final_list = []
-        for p in priority:
-            found = [m for m in valid if p in m]
-            for f in found:
-                if f not in final_list: final_list.append(f)
-        for v in valid:
-            if v not in final_list: final_list.append(v)
-        return final_list if final_list else ["models/gemini-1.5-flash"]
-    except: return ["models/gemini-1.5-flash"]
-
-def format_model_name(name):
-    """Làm đẹp tên model cho dễ đọc"""
-    return name.replace("models/", "").replace("-preview", " (Pre)").replace("-latest", "").upper()
-# ---------------------------------------
+    # Danh sách cứng để đảm bảo an toàn
+    return ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-2.0-flash-exp"]
 
 def upload_to_gemini(path):
     mime_type, _ = mimetypes.guess_type(path)
@@ -92,7 +75,6 @@ def create_docx(content):
     return doc
 
 def get_safe_response(response):
-    """Xử lý an toàn để tránh crash do bản quyền/safety"""
     try:
         finish_reason = response.candidates[0].finish_reason
         if finish_reason in [1, 2]: return response.text
@@ -101,9 +83,16 @@ def get_safe_response(response):
         else: return f"\n\n[Lỗi: Finish Reason {finish_reason}]"
     except: return response.text
 
+def get_last_timestamp(text):
+    """Tìm mốc thời gian cuối cùng trong văn bản dạng [mm:ss]"""
+    matches = re.findall(r'\[(\d{1,2}:\d{2})\]', text)
+    if matches:
+        return matches[-1]
+    return None
+
 # --- 5. MAIN APP ---
 def main():
-    st.title("💎 Universal AI Studio (Pro UI)")
+    st.title("⏱️ Universal AI Studio (Time-Sync Fix)")
     
     with st.sidebar:
         st.header("🎯 CHẾ ĐỘ")
@@ -130,8 +119,7 @@ def main():
             if configure_genai(user_key):
                 st.success("Đã kết nối!")
                 models = get_optimized_models()
-                # ÁP DỤNG FORMAT TÊN MODEL TẠI ĐÂY
-                model_version = st.selectbox("Engine:", models, index=0, format_func=format_model_name)
+                model_version = st.selectbox("Engine:", models, index=0)
             else: st.error("Chưa kết nối!")
 
         if st.button("🗑️ Reset"):
@@ -159,7 +147,7 @@ def main():
                 if not temp_paths:
                     st.warning("Chưa có file!")
                 else:
-                    with st.spinner(f"Đang xử lý với {format_model_name(model_version)}..."):
+                    with st.spinner(f"Đang xử lý với {model_version}..."):
                         try:
                             g_files = [upload_to_gemini(p) for p in temp_paths]
                             st.session_state.gemini_files = g_files
@@ -179,7 +167,7 @@ def main():
                                 {STRICT_RULES}
                                 NHIỆM VỤ: Gỡ băng NGUYÊN VĂN 100%.
                                 YÊU CẦU:
-                                1. Bắt đầu mỗi câu bằng [Phút:Giây].
+                                1. Bắt đầu mỗi câu bằng [Phút:Giây]. Ví dụ: [00:15] Xin chào...
                                 2. Viết lại chính xác từng từ.
                                 3. Định danh: 'Diễn giả'.
                                 4. Ngôn ngữ: Tiếng Việt.
@@ -250,11 +238,27 @@ def main():
                         try:
                             cont_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.2)
                             model = genai.GenerativeModel(model_version)
-                            last_part = res[-500:]
+                            
+                            # --- LOGIC MỚI: TÌM MỐC THỜI GIAN CUỐI CÙNG ---
+                            last_timestamp = get_last_timestamp(res)
+                            last_part = res[-300:]
+                            
+                            if last_timestamp:
+                                time_instruction = f"BẮT ĐẦU NGHE TỪ PHÚT {last_timestamp} TRỞ ĐI."
+                            else:
+                                time_instruction = "Tiếp tục ngay sau đoạn văn bản cuối cùng."
+
                             c_prompt = f"""
                             CONTEXT: Đang gỡ băng dở dang.
-                            MỎ NEO: "...{last_part}"
-                            NHIỆM VỤ: Tìm mỏ neo, viết tiếp NGUYÊN VĂN đoạn sau. KHÔNG viết lại mỏ neo.
+                            MỐC THỜI GIAN CUỐI CÙNG ĐÃ GHI: {last_timestamp}
+                            ĐOẠN CUỐI VĂN BẢN: "...{last_part}"
+                            
+                            NHIỆM VỤ CẤP BÁCH:
+                            1. {time_instruction}
+                            2. Viết tiếp NGUYÊN VĂN đoạn sau.
+                            3. TUYỆT ĐỐI KHÔNG quay lại từ đầu (00:00).
+                            4. TUYỆT ĐỐI KHÔNG viết lại đoạn cũ.
+                            5. Tiếp tục ghi mốc thời gian [mm:ss].
                             """
                             
                             safety_settings = [
@@ -299,7 +303,7 @@ def main():
                         m = genai.GenerativeModel(model_version)
                         r = m.generate_content(
                             st.session_state.gemini_files + [f"Trả lời: {inp}"],
-                            safety_settings=[{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}]
+                            safety_settings=SAFETY_SETTINGS
                         )
                         st.markdown(r.text); st.session_state.chat_history.append({"role": "assistant", "content": r.text})
                     except: st.error("Lỗi chat.")
